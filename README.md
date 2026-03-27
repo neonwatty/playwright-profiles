@@ -12,7 +12,7 @@ Manage Playwright `storageState` authentication profiles for multi-role browser 
 - Claude Code
 - `@playwright/mcp` (installed automatically via npx)
 
-This plugin bundles its own Playwright MCP server config with `--caps=storage` and `--headless=false`. If you also have the official `playwright@claude-plugins-official` plugin installed, disable it to avoid running two MCP server instances.
+This plugin bundles its own Playwright MCP server config. If you also have the official `playwright@claude-plugins-official` plugin installed, disable it to avoid running two MCP server instances. The Playwright MCP server runs in headed mode by default, which is required for interactive login.
 
 ## Usage
 
