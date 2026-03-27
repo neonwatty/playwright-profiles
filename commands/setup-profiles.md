@@ -1,6 +1,6 @@
 ---
 description: Create or refresh Playwright authentication profiles for the current project
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, mcp__playwright__browser_navigate, mcp__playwright__browser_snapshot, mcp__playwright__browser_storage_state, mcp__playwright__browser_set_storage_state, mcp__playwright__browser_close, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_storage_state, mcp__plugin_playwright_playwright__browser_set_storage_state, mcp__plugin_playwright_playwright__browser_close
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, mcp__playwright__browser_navigate, mcp__playwright__browser_snapshot, mcp__playwright__browser_run_code, mcp__playwright__browser_close
 ---
 
 # Setup Playwright Authentication Profiles
@@ -9,28 +9,22 @@ Set up persistent Playwright `storageState` authentication profiles for the curr
 
 ## Step 1: Check MCP Configuration
 
-Before anything else, verify that the Playwright MCP server is configured with the required capabilities.
+Verify that a Playwright MCP server is configured. Check the project's `.mcp.json` and the user's global MCP config (`~/.claude/settings.json`) for a Playwright MCP server entry.
 
-Check the project's `.mcp.json` and the user's global MCP config (`~/.claude/.mcp.json` or `~/.claude/settings.json`) for a Playwright MCP server entry.
-
-**Required flags:**
-- `--caps=storage` — enables `browser_storage_state` and `browser_set_storage_state` tools
-- `--headless=false` — enables headed mode so the user can interact with the browser
-
-If either flag is missing, inform the user and help them update their MCP config. Example config:
+If no Playwright MCP server is configured, guide the user to add one:
 
 ```json
 {
   "mcpServers": {
     "playwright": {
       "command": "npx",
-      "args": ["@playwright/mcp@latest", "--caps=storage", "--headless=false"]
+      "args": ["-y", "@playwright/mcp@latest"]
     }
   }
 }
 ```
 
-Do NOT proceed until the Playwright MCP server is properly configured. If the config was just updated, inform the user they may need to restart Claude Code for MCP changes to take effect.
+The Playwright MCP server runs in headed mode by default, which is required for the interactive login flow.
 
 ## Step 2: Check for Existing Profiles
 
@@ -58,6 +52,7 @@ For projects spanning multiple apps, suggest using descriptive prefixed names (e
 ## Step 4: Write Configuration
 
 Create the directory structure:
+
 ```
 .playwright/
   profiles.json
@@ -93,15 +88,23 @@ For each profile, one at a time:
 1. **Announce:** Tell the user which role to log in as. For example:
    > "I'm opening the browser to the login page. Please log in as the **admin** user. Tell me when you're done."
 
-2. **Navigate:** Use `browser_navigate` to open the profile's `loginUrl` in Playwright. The browser must be running in headed mode (`--headless=false`) so the user can see and interact with it.
+2. **Navigate:** Use `browser_navigate` to open the profile's `loginUrl` in Playwright. The browser runs in headed mode by default so the user can see and interact with it.
 
 3. **Wait:** Ask the user to complete the login manually. This handles all auth methods — username/password, Google OAuth, 2FA, etc. Wait for the user to confirm they are logged in.
 
-4. **Capture:** Call `browser_storage_state` with the filename set to `.playwright/profiles/<role-name>.json` (relative to the project root). This saves all cookies, localStorage, and sessionStorage for the authenticated session.
+4. **Capture:** Use `browser_run_code` to capture the storage state:
+
+   ```javascript
+   async (page) => {
+     return await page.context().storageState();
+   }
+   ```
+
+   This returns a JSON object containing all cookies, localStorage, and sessionStorage. Save the returned JSON to `.playwright/profiles/<role-name>.json` using the Write tool.
 
 5. **Confirm:** Tell the user the profile was saved successfully.
 
-6. **Next:** Move to the next profile, or finish if all profiles are done.
+6. **Next:** Close the browser with `browser_close`, then move to the next profile.
 
 If the user wants to cancel mid-loop, save whatever profiles have been completed so far — they are still usable.
 
@@ -123,7 +126,7 @@ Authenticated browser profiles are available at `.playwright/profiles/`.
 Available profiles:
 - role-name: Role description
 Config: `.playwright/profiles.json`
-To load a profile, call `browser_set_storage_state` with the corresponding file from `.playwright/profiles/`.
+To load a profile, use `browser_run_code` to restore cookies and localStorage from the profile JSON file before navigating.
 Run `/setup-profiles` to create new profiles or refresh expired sessions.
 ```
 

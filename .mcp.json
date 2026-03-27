@@ -1,6 +1,6 @@
 {
   "playwright": {
     "command": "npx",
-    "args": ["@playwright/mcp@latest", "--caps=storage", "--headless=false"]
+    "args": ["-y", "@playwright/mcp@latest"]
   }
 }

@@ -47,9 +47,24 @@ Before navigating to any authenticated page, load the profile:
 
 1. Verify the storageState file exists at `.playwright/profiles/<role-name>.json`. If it does not exist, inform the user and suggest running `/setup-profiles` to create it.
 
-2. Call `browser_set_storage_state` (MCP tool: `mcp__playwright__browser_set_storage_state`) with the filename `.playwright/profiles/<role-name>.json` to restore the saved authentication state into the current browser context.
+2. Read the storageState JSON file. It contains `cookies` and `origins` (localStorage) arrays.
 
-3. Proceed with the intended navigation or browser work.
+3. Use `browser_run_code` (MCP tool: `mcp__playwright__browser_run_code`) to restore the auth state. Pass the parsed state data inline:
+
+   ```javascript
+   async (page) => {
+     const state = STATE_JSON_HERE;
+     await page.context().addCookies(state.cookies);
+     for (const origin of state.origins || []) {
+       await page.goto(origin.origin);
+       for (const item of origin.localStorage) {
+         await page.evaluate(([k, v]) => localStorage.setItem(k, v), [item.name, item.value]);
+       }
+     }
+   }
+   ```
+
+4. Proceed with the intended navigation or browser work.
 
 ## Session Expiry Detection
 
