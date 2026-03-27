@@ -1,0 +1,8 @@
+# Dependencies
+node_modules/
+
+# Local development
+.claude/
+
+# OS
+.DS_Store

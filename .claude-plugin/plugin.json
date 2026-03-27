@@ -1,0 +1,5 @@
+{
+  "name": "playwright-profiles",
+  "version": "1.0.0",
+  "description": "Manage Playwright storageState authentication profiles for multi-role browser testing"
+}

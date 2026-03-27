@@ -1,0 +1,25 @@
+{
+  "name": "playwright-profiles",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Claude Code plugin to manage Playwright storageState authentication profiles for multi-role browser testing",
+  "scripts": {
+    "prepare": "husky",
+    "validate": "npm run validate:md && npm run validate:skills && npm run validate:json",
+    "validate:md": "npx markdownlint-cli2 'skills/**/*.md' 'commands/**/*.md' 'README.md'",
+    "validate:skills": "./scripts/validate-skills.sh",
+    "validate:json": "python3 -m json.tool .claude-plugin/plugin.json > /dev/null && python3 -m json.tool .mcp.json > /dev/null",
+    "validate:links": "npx markdown-link-check -q skills/*/SKILL.md README.md || true",
+    "validate:plugin": "claude plugin validate ."
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
+    "husky": "^9.1.7",
+    "markdownlint-cli2": "^0.14.0",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/github": "^11.0.6",
+    "@semantic-release/release-notes-generator": "^14.1.0",
+    "semantic-release": "^24.2.9"
+  }
+}
