@@ -49,22 +49,17 @@ Before navigating to any authenticated page, load the profile:
 
 2. Read the storageState JSON file. It contains `cookies` and `origins` (localStorage) arrays.
 
-3. Use `browser_run_code` (MCP tool: `mcp__playwright__browser_run_code`) to restore the auth state. Pass the parsed state data inline:
+3. Use `browser_run_code` (MCP tool: `mcp__playwright__browser_run_code`) to restore cookies only. Do NOT navigate to the app's origin to set localStorage first — this triggers client-side auth libraries (e.g., Supabase) that may clear the restored cookies.
 
    ```javascript
    async (page) => {
      const state = STATE_JSON_HERE;
      await page.context().addCookies(state.cookies);
-     for (const origin of state.origins || []) {
-       await page.goto(origin.origin);
-       for (const item of origin.localStorage) {
-         await page.evaluate(([k, v]) => localStorage.setItem(k, v), [item.name, item.value]);
-       }
-     }
+     return 'Profile loaded';
    }
    ```
 
-4. Proceed with the intended navigation or browser work.
+4. Navigate directly to the target authenticated page. The cookies will be sent with the request and the app will recognize the session.
 
 ## Session Expiry Detection
 
