@@ -112,6 +112,10 @@ function authFile(site) {
 
 function profileDir(profileName) {
   if (!profileName || profileName === 'default') return PROFILE_DIR;
+  if (!/^[a-zA-Z0-9_-]+$/.test(profileName)) {
+    console.error(`Invalid profile name "${profileName}". Use only letters, numbers, hyphens, and underscores.`);
+    process.exit(1);
+  }
   return join(BASE_DIR, `chrome-profile-${profileName}`);
 }
 
@@ -475,7 +479,11 @@ const rawArgs = process.argv.slice(2);
 let cliProfile;
 const args = [];
 for (let i = 0; i < rawArgs.length; i++) {
-  if (rawArgs[i] === '--profile' && i + 1 < rawArgs.length) {
+  if (rawArgs[i] === '--profile') {
+    if (i + 1 >= rawArgs.length) {
+      console.error('Error: --profile requires a name argument.');
+      process.exit(1);
+    }
     cliProfile = rawArgs[++i];
   } else {
     args.push(rawArgs[i]);

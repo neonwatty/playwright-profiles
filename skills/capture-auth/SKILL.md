@@ -77,7 +77,7 @@ Tell the user:
 - Their app is now registered as `<name>`
 - Future sign-ins: `node ~/.playwright-cli/sign-in.mjs login <name>`
 - To browse authenticated: just ask Claude to "open deckchecker" or "browse seatify"
-- Auth state persists in the shared Chrome profile — signing into one app does not affect others
+- Auth state persists in the Chrome profile — different domains coexist, but multiple accounts on the same domain require `--profile` (see Multi-User section above)
 
 ## Multi-User / QA Profiles
 
