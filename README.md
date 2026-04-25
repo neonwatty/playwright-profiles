@@ -124,7 +124,7 @@ Each `--profile <name>` creates an independent Chrome user data directory (`chro
 
 | Mode | Command | Headless | Session isolation | Use when |
 |------|---------|----------|-------------------|----------|
-| `state-load` | `playwright-cli state-load auth-*.json` | Yes | Preserved | Your own apps, simple sites |
+| `state-load` | `playwright-cli state-load auth-<site>.json` | Yes | Preserved | Your own apps, simple sites |
 | `--persistent --profile` | `playwright-cli open --headed --browser chrome --persistent --profile ...` | No | Overridden | Cloudflare, Google OAuth, AWS |
 
 **Default to `state-load`** — it injects cookies into the existing session without interfering with per-repo `cli.config.json` or `PLAYWRIGHT_CLI_SESSION` isolation. Fall back to `--persistent --profile` only when the site has bot detection that rejects headless browsers.

@@ -87,7 +87,7 @@ Tell the user:
 - Future sign-ins: `node ~/.playwright-cli/sign-in.mjs login <name>`
 - To browse authenticated: just ask Claude to "open deckchecker" or "browse seatify"
 - Default browsing uses `state-load` (headless, non-interfering with session isolation)
-- Different domains coexist in one auth file, but multiple accounts on the same domain require `--profile` (see Multi-User section above)
+- Each site gets its own auth file (`auth-<name>.json`); multiple accounts on the same domain need distinct site names (e.g., `seatify-admin`, `seatify-planner`)
 
 ## Multi-User / QA Profiles
 
@@ -113,12 +113,27 @@ The `--profile <name>` flag creates an isolated Chrome directory at `~/.playwrig
 
 ### Step 3: Browse as a specific user
 
+Multi-user profiles on the same domain share auth files keyed by site name (e.g., `auth-seatify-admin.json`, `auth-seatify-planner.json`). Since each role has a distinct site name, `state-load` works:
+
+```bash
+playwright-cli open https://seatify.app/dashboard
+playwright-cli state-load ~/.playwright-cli/auth-seatify-admin.json
+playwright-cli reload
+```
+
+To switch users, load a different auth file:
+
+```bash
+playwright-cli state-load ~/.playwright-cli/auth-seatify-planner.json
+playwright-cli reload
+```
+
+If `state-load` doesn't work (bot detection), fall back to the persistent profile:
+
 ```bash
 playwright-cli open https://seatify.app/dashboard --headed --browser chrome \
   --persistent --profile ~/.playwright-cli/chrome-profile-seatify-admin
 ```
-
-To switch users, close the browser and re-open with a different profile path.
 
 ### Naming convention
 
@@ -177,9 +192,9 @@ playwright-cli open <url>
 playwright-cli state-load ~/.playwright-cli/auth-<name>.json
 playwright-cli reload
 
-# Multi-user / QA — use the role-specific auth file
+# Multi-user / QA — each role is a separate site name
 playwright-cli open <url>
-playwright-cli state-load ~/.playwright-cli/auth-<name>-<role>.json
+playwright-cli state-load ~/.playwright-cli/auth-seatify-admin.json
 playwright-cli reload
 ```
 

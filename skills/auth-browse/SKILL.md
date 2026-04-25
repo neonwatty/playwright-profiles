@@ -83,7 +83,7 @@ For arbitrary URLs without adding a shortcut: `node ~/.playwright-cli/sign-in.mj
 
 Choose the right tier based on the target site:
 
-**Tier 1: `state-load` (simpler sites — GitHub, Vercel, Netlify, Railway, Render):**
+**Tier 1: `state-load` (most sites — GitHub, Vercel, Netlify, Railway, Render, Sentry, PostHog, Supabase):**
 
 Injects cookies into the existing headless session. Non-interfering — respects `cli.config.json` and per-repo session isolation.
 
@@ -93,7 +93,7 @@ playwright-cli state-load ~/.playwright-cli/auth-<site>.json
 playwright-cli reload
 ```
 
-**Tier 2: `--persistent --profile` (bot-protected sites — Cloudflare, Google, Supabase, AWS):**
+**Tier 2: `--persistent --profile` (bot-protected sites — Cloudflare, Google, AWS):**
 
 Uses real Chrome with persistent profile. Overrides session isolation and requires headed mode, but bypasses bot detection.
 
@@ -123,19 +123,19 @@ node ~/.playwright-cli/sign-in.mjs login github --profile work
 node ~/.playwright-cli/sign-in.mjs login github --profile personal
 ```
 
-Browse with the isolated profile — for simpler sites, `state-load` with the auth file is preferred:
+Browse with the isolated profile. Note: `state-load` uses the auth file keyed by site name, so multiple profiles on the same domain (e.g., `github --profile work` and `github --profile personal`) both write to `auth-github.json` — the second overwrites the first. For multi-user isolation on the same domain, use the persistent profile approach:
+
+```bash
+playwright-cli open https://github.com --headed --browser chrome \
+  --persistent --profile ~/.playwright-cli/chrome-profile-work
+```
+
+For different sites (no multi-user conflict), `state-load` works fine:
 
 ```bash
 playwright-cli open https://github.com
 playwright-cli state-load ~/.playwright-cli/auth-github.json
 playwright-cli reload
-```
-
-For bot-protected sites, use the persistent profile:
-
-```bash
-playwright-cli open https://github.com --headed --browser chrome \
-  --persistent --profile ~/.playwright-cli/chrome-profile-work
 ```
 
 See the **capture-auth** skill for a full multi-user/QA workflow.
