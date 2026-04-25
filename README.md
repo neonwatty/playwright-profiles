@@ -108,12 +108,26 @@ node ~/.playwright-cli/sign-in.mjs add myapp-planner https://myapp.com/login /da
 node ~/.playwright-cli/sign-in.mjs login myapp-admin --profile myapp-admin
 node ~/.playwright-cli/sign-in.mjs login myapp-planner --profile myapp-planner
 
-# Browse as a specific user
+# Browse as a specific user (own apps — use state-load, headless-friendly)
+playwright-cli open https://myapp.com/dashboard
+playwright-cli state-load ~/.playwright-cli/auth-myapp-admin.json
+playwright-cli reload
+
+# Browse bot-protected sites — use persistent profile (headed, real Chrome)
 playwright-cli open https://myapp.com/dashboard --headed --browser chrome \
   --persistent --profile ~/.playwright-cli/chrome-profile-myapp-admin
 ```
 
 Each `--profile <name>` creates an independent Chrome user data directory (`chrome-profile-<name>/`), so cookies from different accounts never conflict.
+
+### Two browsing modes
+
+| Mode | Command | Headless | Session isolation | Use when |
+|------|---------|----------|-------------------|----------|
+| `state-load` | `playwright-cli state-load auth-*.json` | Yes | Preserved | Your own apps, simple sites |
+| `--persistent --profile` | `playwright-cli open --headed --browser chrome --persistent --profile ...` | No | Overridden | Cloudflare, Google OAuth, AWS |
+
+**Default to `state-load`** — it injects cookies into the existing session without interfering with per-repo `cli.config.json` or `PLAYWRIGHT_CLI_SESSION` isolation. Fall back to `--persistent --profile` only when the site has bot detection that rejects headless browsers.
 
 ### Refreshing expired sessions
 

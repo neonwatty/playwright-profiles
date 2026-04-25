@@ -81,13 +81,11 @@ For arbitrary URLs without adding a shortcut: `node ~/.playwright-cli/sign-in.mj
 
 ### Step 3: Browse authenticated
 
-**Default (works for all sites including bot-protected ones):**
+Choose the right tier based on the target site:
 
-```bash
-playwright-cli open <url> --headed --browser chrome --persistent --profile ~/.playwright-cli/chrome-profile
-```
+**Tier 1: `state-load` (simpler sites — GitHub, Vercel, Netlify, Railway, Render):**
 
-**Headless mode (simpler sites only — NOT Cloudflare, Google):**
+Injects cookies into the existing headless session. Non-interfering — respects `cli.config.json` and per-repo session isolation.
 
 ```bash
 playwright-cli open <url>
@@ -95,7 +93,15 @@ playwright-cli state-load ~/.playwright-cli/auth-<site>.json
 playwright-cli reload
 ```
 
-When unsure whether a site has bot detection, default to the headed/persistent approach.
+**Tier 2: `--persistent --profile` (bot-protected sites — Cloudflare, Google, Supabase, AWS):**
+
+Uses real Chrome with persistent profile. Overrides session isolation and requires headed mode, but bypasses bot detection.
+
+```bash
+playwright-cli open <url> --headed --browser chrome --persistent --profile ~/.playwright-cli/chrome-profile
+```
+
+**When unsure**, try `state-load` first. If the site redirects to a login page or shows a bot challenge, fall back to the persistent profile approach.
 
 ### Navigating between services
 
@@ -117,7 +123,15 @@ node ~/.playwright-cli/sign-in.mjs login github --profile work
 node ~/.playwright-cli/sign-in.mjs login github --profile personal
 ```
 
-Browse with the isolated profile:
+Browse with the isolated profile — for simpler sites, `state-load` with the auth file is preferred:
+
+```bash
+playwright-cli open https://github.com
+playwright-cli state-load ~/.playwright-cli/auth-github.json
+playwright-cli reload
+```
+
+For bot-protected sites, use the persistent profile:
 
 ```bash
 playwright-cli open https://github.com --headed --browser chrome \
