@@ -1,0 +1,22 @@
+{
+  "name": "neonwatty-playwright-profiles",
+  "owner": { "name": "Jeremy Watt", "github": "neonwatty" },
+  "plugins": [
+    {
+      "name": "playwright-profiles",
+      "source": { "source": "github", "repo": "neonwatty/playwright-profiles" },
+      "description": "Manage Playwright authentication profiles — per-project role-based profiles and global persistent auth for external services with bot-detection bypass",
+      "version": "2.0.0",
+      "category": "browser",
+      "tags": [
+        "playwright",
+        "authentication",
+        "browser",
+        "profiles",
+        "multi-user",
+        "qa",
+        "bot-detection"
+      ]
+    }
+  ]
+}
