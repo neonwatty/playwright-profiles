@@ -5,7 +5,8 @@
  *
  * Launches real Chrome with automation flags stripped so Google OAuth,
  * Cloudflare Turnstile, and other bot-detection systems allow sign-in.
- * Auth state accumulates in a shared Chrome profile at ~/.playwright-cli/.
+ * Auth state accumulates in a shared Chrome profile at
+ * ~/.playwright-cli/chrome-profile/.
  *
  * Usage:
  *   node sign-in.mjs login <site|url>   Sign in and save auth state
@@ -17,9 +18,16 @@
  * Requires: npm install playwright (in the same directory or globally)
  */
 
+/**
+ * @typedef {{ url: string, waitFor: string }} SiteConfig
+ * `waitFor` is a URL substring that indicates successful sign-in.
+ * It must NOT match the login URL itself — use a post-login path
+ * (e.g., '/dashboard', '/organizations') to avoid false auto-detect.
+ */
+
 import { chromium } from 'playwright';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
+import { join, basename } from 'path';
 import { homedir } from 'os';
 
 // ── Config ──────────────────────────────────────────────────────────
@@ -33,22 +41,25 @@ const CHROME_PATHS = {
   linux: '/usr/bin/google-chrome',
   win32: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
 };
+if (!(process.platform in CHROME_PATHS)) {
+  console.error(`Warning: unsupported platform "${process.platform}", defaulting to macOS Chrome path.`);
+}
 const CHROME_PATH = CHROME_PATHS[process.platform] || CHROME_PATHS.darwin;
 
 // ── Sites config ────────────────────────────────────────────────────
 
-// Built-in site shortcuts (user can add more via `add` command)
+// Built-in site shortcuts. waitFor patterns must NOT match the login URL.
 const DEFAULT_SITES = {
-  github:     { url: 'https://github.com/login',          waitFor: 'github.com' },
-  cloudflare: { url: 'https://dash.cloudflare.com/',       waitFor: 'dash.cloudflare.com' },
-  vercel:     { url: 'https://vercel.com/login',            waitFor: 'vercel.com' },
-  sentry:     { url: 'https://sentry.io/auth/login/',       waitFor: 'sentry.io/organizations' },
-  posthog:    { url: 'https://us.posthog.com/',              waitFor: 'us.posthog.com' },
-  supabase:   { url: 'https://supabase.com/dashboard',       waitFor: 'supabase.com/dashboard' },
-  aws:        { url: 'https://console.aws.amazon.com/',      waitFor: 'console.aws.amazon.com' },
-  netlify:    { url: 'https://app.netlify.com/',              waitFor: 'app.netlify.com' },
-  railway:    { url: 'https://railway.com/login',             waitFor: 'railway.com' },
-  render:     { url: 'https://dashboard.render.com/',          waitFor: 'dashboard.render.com' },
+  github:     { url: 'https://github.com/login',              waitFor: 'github.com/dashboard' },
+  cloudflare: { url: 'https://dash.cloudflare.com/',           waitFor: '/home' },
+  vercel:     { url: 'https://vercel.com/login',               waitFor: 'vercel.com/~' },
+  sentry:     { url: 'https://sentry.io/auth/login/',          waitFor: 'sentry.io/organizations' },
+  posthog:    { url: 'https://us.posthog.com/',                 waitFor: '/project' },
+  supabase:   { url: 'https://supabase.com/dashboard',          waitFor: '/projects' },
+  aws:        { url: 'https://console.aws.amazon.com/',         waitFor: 'console/home' },
+  netlify:    { url: 'https://app.netlify.com/',                waitFor: '/sites' },
+  railway:    { url: 'https://railway.com/login',               waitFor: 'railway.com/project' },
+  render:     { url: 'https://dashboard.render.com/',            waitFor: '/services' },
 };
 
 function loadSites() {
@@ -57,19 +68,34 @@ function loadSites() {
     try {
       const custom = JSON.parse(readFileSync(SITES_FILE, 'utf-8'));
       Object.assign(sites, custom);
-    } catch {
-      // Ignore malformed file, use defaults
+    } catch (err) {
+      console.error(`Warning: could not parse ${SITES_FILE}, using defaults: ${err.message}`);
     }
   }
   return sites;
 }
 
 function saveSite(name, url, waitFor) {
+  // Validate site name (alphanumeric, hyphens, underscores only)
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+    console.error(`Invalid site name "${name}". Use only letters, numbers, hyphens, and underscores.`);
+    process.exit(1);
+  }
+
+  // Validate URL
+  try {
+    new URL(url);
+  } catch {
+    console.error(`Invalid URL: "${url}"`);
+    process.exit(1);
+  }
+
   let custom = {};
   if (existsSync(SITES_FILE)) {
     try {
       custom = JSON.parse(readFileSync(SITES_FILE, 'utf-8'));
-    } catch {
+    } catch (err) {
+      console.error(`Warning: could not parse ${SITES_FILE}, starting fresh: ${err.message}`);
       custom = {};
     }
   }
@@ -87,24 +113,43 @@ function authFile(site) {
 async function launchBrowser() {
   mkdirSync(PROFILE_DIR, { recursive: true });
 
-  return chromium.launchPersistentContext(PROFILE_DIR, {
-    executablePath: CHROME_PATH,
-    headless: false,
-    ignoreDefaultArgs: ['--enable-automation'],
-    args: ['--disable-blink-features=AutomationControlled'],
-  });
+  if (!existsSync(CHROME_PATH)) {
+    console.error(`Chrome not found at: ${CHROME_PATH}`);
+    console.error('Install Google Chrome or edit CHROME_PATHS in this script.');
+    process.exit(1);
+  }
+
+  try {
+    return await chromium.launchPersistentContext(PROFILE_DIR, {
+      executablePath: CHROME_PATH,
+      headless: false,
+      ignoreDefaultArgs: ['--enable-automation'],
+      args: ['--disable-blink-features=AutomationControlled'],
+    });
+  } catch (err) {
+    if (err.message.includes('existing browser session') || err.message.includes('Target page, context or browser has been closed')) {
+      console.error('Chrome is already running with this profile.');
+      console.error('Close it or run: kill $(pgrep -f "chrome-profile")');
+    } else {
+      console.error(`Failed to launch Chrome: ${err.message}`);
+    }
+    process.exit(1);
+  }
 }
 
 // ── Auto-detect sign-in completion ──────────────────────────────────
 
-async function waitForSignIn(page, waitForPattern, timeoutMs = 120_000) {
-  return Promise.race([
+async function waitForSignIn(page, waitForPattern, startUrl, timeoutMs = 120_000) {
+  let stdinHandler;
+
+  const result = await Promise.race([
     // Auto-detect: poll URL for the waitFor pattern
     (async () => {
       const start = Date.now();
       while (Date.now() - start < timeoutMs) {
         const url = page.url();
-        if (url.includes(waitForPattern)) {
+        // Only match after navigating away from the starting URL
+        if (url !== startUrl && url.includes(waitForPattern)) {
           // Small delay to let cookies settle after redirect
           await new Promise(r => setTimeout(r, 2000));
           return 'auto';
@@ -115,9 +160,90 @@ async function waitForSignIn(page, waitForPattern, timeoutMs = 120_000) {
     })(),
     // Manual: user presses Enter
     new Promise((resolve) => {
-      process.stdin.once('data', () => resolve('manual'));
+      stdinHandler = () => resolve('manual');
+      process.stdin.once('data', stdinHandler);
     }),
   ]);
+
+  // Clean up the losing branch
+  if (stdinHandler) {
+    process.stdin.removeListener('data', stdinHandler);
+  }
+  process.stdin.unref();
+
+  return result;
+}
+
+// ── Shared login logic ──────────────────────────────────────────────
+
+async function performLogin({ url, outFile, siteName, waitForPattern }) {
+  console.log(`\n🔐 Signing into: ${siteName} (${url})`);
+  console.log(`   Auth will be saved to: ${outFile}\n`);
+
+  const context = await launchBrowser();
+
+  // Ensure cleanup on Ctrl+C
+  const cleanup = async () => {
+    console.log('\nInterrupted — closing browser...');
+    await context.close().catch(() => {});
+    process.exit(130);
+  };
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
+
+  const page = context.pages()[0] || await context.newPage();
+
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+  } catch (err) {
+    console.error(`Failed to navigate to ${url}: ${err.message}`);
+    await context.close().catch(() => {});
+    process.exit(1);
+  }
+
+  const startUrl = page.url();
+
+  if (waitForPattern) {
+    console.log('Sign in using the browser window.');
+    console.log('Auth state will save automatically when sign-in is detected.');
+    console.log('Or press Enter manually to save at any time.\n');
+
+    const result = await waitForSignIn(page, waitForPattern, startUrl);
+
+    if (result === 'timeout') {
+      console.log('⚠ Timed out waiting for sign-in. Saving current state anyway.');
+    } else if (result === 'auto') {
+      console.log('✓ Sign-in detected automatically.');
+    } else {
+      console.log('✓ Manual save triggered.');
+    }
+  } else {
+    console.log('Sign in using the browser window.');
+    console.log('Press Enter here to save auth state.\n');
+
+    await new Promise((resolve) => {
+      process.stdin.once('data', resolve);
+    });
+    console.log('✓ Manual save triggered.');
+  }
+
+  try {
+    await context.storageState({ path: outFile });
+  } catch (err) {
+    console.error(`Failed to save auth state: ${err.message}`);
+    await context.close().catch(() => {});
+    process.exit(1);
+  }
+
+  console.log(`Auth state saved to ${outFile}`);
+
+  const state = JSON.parse(readFileSync(outFile, 'utf-8'));
+  printCookieSummary(state, siteName);
+
+  process.removeListener('SIGINT', cleanup);
+  process.removeListener('SIGTERM', cleanup);
+  await context.close();
+  process.exit(0);
 }
 
 // ── Commands ────────────────────────────────────────────────────────
@@ -131,85 +257,69 @@ async function login(siteName) {
     process.exit(1);
   }
 
-  const outFile = authFile(siteName);
-  console.log(`\n🔐 Signing into: ${siteName} (${site.url})`);
-  console.log(`   Auth will be saved to: ${outFile}\n`);
-
-  const context = await launchBrowser();
-  const page = context.pages()[0] || await context.newPage();
-  await page.goto(site.url, { waitUntil: 'domcontentloaded' });
-
-  console.log('Sign in using the browser window.');
-  console.log('Auth state will save automatically when sign-in is detected.');
-  console.log('Or press Enter manually to save at any time.\n');
-
-  const result = await waitForSignIn(page, site.waitFor);
-
-  if (result === 'timeout') {
-    console.log('⚠ Timed out waiting for sign-in. Saving current state anyway.');
-  } else if (result === 'auto') {
-    console.log('✓ Sign-in detected automatically.');
-  } else {
-    console.log('✓ Manual save triggered.');
-  }
-
-  await context.storageState({ path: outFile });
-  console.log(`Auth state saved to ${outFile}`);
-
-  const state = JSON.parse(readFileSync(outFile, 'utf-8'));
-  printCookieSummary(state, siteName);
-
-  await context.close();
-  process.exit(0);
+  await performLogin({
+    url: site.url,
+    outFile: authFile(siteName),
+    siteName,
+    waitForPattern: site.waitFor,
+  });
 }
 
 async function loginUrl(url) {
+  try {
+    new URL(url);
+  } catch {
+    console.error(`Invalid URL: "${url}"`);
+    process.exit(1);
+  }
+
   const hostname = new URL(url).hostname.replace(/\./g, '-');
-  const outFile = join(BASE_DIR, `auth-${hostname}.json`);
-
-  console.log(`\n🔐 Signing into: ${url}`);
-  console.log(`   Auth will be saved to: ${outFile}\n`);
-
-  const context = await launchBrowser();
-  const page = context.pages()[0] || await context.newPage();
-  await page.goto(url, { waitUntil: 'domcontentloaded' });
-
-  console.log('Sign in using the browser window.');
-  console.log('Press Enter here to save auth state.\n');
-
-  await new Promise((resolve) => {
-    process.stdin.once('data', resolve);
+  await performLogin({
+    url,
+    outFile: authFile(hostname),
+    siteName: hostname,
+    waitForPattern: null, // No auto-detect for arbitrary URLs
   });
-
-  await context.storageState({ path: outFile });
-  console.log(`Auth state saved to ${outFile}`);
-
-  const state = JSON.parse(readFileSync(outFile, 'utf-8'));
-  printCookieSummary(state, hostname);
-
-  await context.close();
-  process.exit(0);
 }
 
 function check(siteName) {
   const sites = loadSites();
   if (siteName) {
     checkSite(siteName, sites);
-  } else {
-    let found = false;
-    for (const site of Object.keys(sites)) {
-      const file = authFile(site);
-      if (existsSync(file)) {
+    return;
+  }
+
+  // Check known sites + discover auth files from URL-based logins
+  const checked = new Set();
+  let found = false;
+
+  // Known sites first
+  for (const site of Object.keys(sites)) {
+    const file = authFile(site);
+    if (existsSync(file)) {
+      found = true;
+      checked.add(basename(file));
+      checkSite(site, sites);
+      console.log('');
+    }
+  }
+
+  // Discover auth-*.json files not covered by known sites
+  if (existsSync(BASE_DIR)) {
+    for (const file of readdirSync(BASE_DIR)) {
+      if (file.startsWith('auth-') && file.endsWith('.json') && !checked.has(file)) {
         found = true;
-        checkSite(site, sites);
+        const name = file.replace(/^auth-/, '').replace(/\.json$/, '');
+        checkSite(name, sites);
         console.log('');
       }
     }
-    if (!found) {
-      console.log('No saved auth states found.');
-      console.log('Run: node sign-in.mjs login <site>');
-      console.log(`Available: ${Object.keys(sites).join(', ')}`);
-    }
+  }
+
+  if (!found) {
+    console.log('No saved auth states found.');
+    console.log('Run: node sign-in.mjs login <site>');
+    console.log(`Available: ${Object.keys(sites).join(', ')}`);
   }
 }
 
@@ -221,8 +331,12 @@ function checkSite(siteName, sites) {
     return;
   }
 
-  const state = JSON.parse(readFileSync(file, 'utf-8'));
-  printCookieSummary(state, siteName);
+  try {
+    const state = JSON.parse(readFileSync(file, 'utf-8'));
+    printCookieSummary(state, siteName);
+  } catch (err) {
+    console.log(`  ${siteName}: corrupted auth file (${err.message})`);
+  }
 }
 
 function printCookieSummary(state, siteName) {
@@ -250,12 +364,12 @@ function printCookieSummary(state, siteName) {
   console.log(`  ${siteName}: ${cookies.length} cookies across ${Object.keys(byDomain).length} domains`);
 
   // Find soonest-expiring non-session, non-ephemeral cookie
-  const expiring = cookies
+  const meaningful = cookies
     .filter(c => c.expires > 0 && !EPHEMERAL.has(c.name))
     .sort((a, b) => a.expires - b.expires);
 
-  if (expiring.length > 0) {
-    const soonest = expiring[0];
+  if (meaningful.length > 0) {
+    const soonest = meaningful[0];
     const remaining = soonest.expires - now;
 
     if (remaining <= 0) {
@@ -267,14 +381,12 @@ function printCookieSummary(state, siteName) {
     }
   }
 
-  // Show auth-relevant cookies
-  const authCookies = cookies.filter(c =>
+  // Show auth-relevant cookies (subset of meaningful, already sorted)
+  const authCookies = meaningful.filter(c =>
     /auth|session|token|sid|jwt|identity|logged/i.test(c.name)
-    && !EPHEMERAL.has(c.name)
-    && c.expires > 0
   );
   if (authCookies.length > 0) {
-    const authSoonest = authCookies.sort((a, b) => a.expires - b.expires)[0];
+    const authSoonest = authCookies[0];
     const authRemaining = authSoonest.expires - now;
     if (authRemaining <= 0) {
       console.log(`  ⚠ Auth cookie "${authSoonest.name}" EXPIRED ${formatDuration(-authRemaining)} ago`);
@@ -301,13 +413,14 @@ Persistent browser sign-in for external services.
 
 Launches real Chrome with automation flags stripped so Google OAuth,
 Cloudflare Turnstile, and other bot-detection systems allow sign-in.
-Auth state accumulates in a shared Chrome profile at ~/.playwright-cli/.
+Auth state accumulates in a shared Chrome profile at
+~/.playwright-cli/chrome-profile/.
 
 Usage: node sign-in.mjs <command> [args]
 
 Commands:
   login <site>                Sign in and save auth state (auto-detects completion)
-  login <url>                 Sign into an arbitrary URL
+  login <url>                 Sign into an arbitrary URL (manual Enter to save)
   check [site]                Check expiry status of saved auth states
   list                        List available site shortcuts
   add <name> <url> [waitFor]  Add a custom site shortcut

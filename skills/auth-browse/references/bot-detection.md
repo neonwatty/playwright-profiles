@@ -18,7 +18,7 @@ Google checks `navigator.webdriver` and the `--enable-automation` Chrome flag. W
 - `ignoreDefaultArgs: ['--enable-automation']` → strips the automation flag
 - `args: ['--disable-blink-features=AutomationControlled']` → prevents `navigator.webdriver = true`
 
-Headless mode can work for Google OAuth when these flags are set, but headed mode is more reliable.
+Headless mode does not reliably bypass Google OAuth — always use headed mode for Google sign-in.
 
 ## Cloudflare Turnstile Detection
 
