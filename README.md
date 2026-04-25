@@ -14,6 +14,10 @@ Manage Playwright authentication profiles for Claude Code — both per-project r
 - **`/setup-auth-browse`** — One-time setup to install the sign-in script and authenticate to external services (Cloudflare, Sentry, PostHog, Supabase, Vercel, AWS, etc.).
 - **`auth-browse` skill** — Browse external service dashboards using `playwright-cli` with persistent auth. Uses real Chrome with automation flags stripped to bypass Google OAuth and Cloudflare Turnstile bot detection.
 
+### Custom app auth (capture-auth)
+
+- **`capture-auth` skill** — Capture and reuse authenticated sessions for your own web apps (deckchecker, seatify, client portals, staging environments, etc.). Register a custom app with a name, login URL, and post-login pattern, then sign in once and browse authenticated from any Claude session.
+
 ## Prerequisites
 
 - Claude Code
@@ -91,6 +95,26 @@ node ~/.playwright-cli/sign-in.mjs add myapp https://myapp.com/login myapp.com/d
 node ~/.playwright-cli/sign-in.mjs check
 ```
 
+### Multi-user / QA profiles
+
+For apps where you need separate sessions for different users (e.g., admin vs planner), use `--profile` to isolate Chrome profiles:
+
+```bash
+# Register each user as a separate site
+node ~/.playwright-cli/sign-in.mjs add myapp-admin https://myapp.com/login /dashboard
+node ~/.playwright-cli/sign-in.mjs add myapp-planner https://myapp.com/login /dashboard
+
+# Sign in with isolated profiles (run in separate terminal)
+node ~/.playwright-cli/sign-in.mjs login myapp-admin --profile myapp-admin
+node ~/.playwright-cli/sign-in.mjs login myapp-planner --profile myapp-planner
+
+# Browse as a specific user
+playwright-cli open https://myapp.com/dashboard --headed --browser chrome \
+  --persistent --profile ~/.playwright-cli/chrome-profile-myapp-admin
+```
+
+Each `--profile <name>` creates an independent Chrome user data directory (`chrome-profile-<name>/`), so cookies from different accounts never conflict.
+
 ### Refreshing expired sessions
 
 **Per-project profiles:** Run `/setup-profiles` again to refresh specific profiles.
@@ -123,7 +147,8 @@ For sites with aggressive bot detection (Cloudflare), headed mode (`--headed`) i
 | File | Purpose |
 |------|---------|
 | `~/.playwright-cli/sign-in.mjs` | Sign-in script |
-| `~/.playwright-cli/chrome-profile/` | Persistent Chrome user data |
+| `~/.playwright-cli/chrome-profile/` | Default Chrome profile (shared) |
+| `~/.playwright-cli/chrome-profile-<name>/` | Isolated profiles (`--profile` flag) |
 | `~/.playwright-cli/sites.json` | Custom site shortcuts |
 | `~/.playwright-cli/auth-*.json` | Per-site cookie snapshots |
 

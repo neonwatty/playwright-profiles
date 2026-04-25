@@ -21,7 +21,8 @@ All auth state lives in `~/.playwright-cli/`:
 ```
 ~/.playwright-cli/
 ├── sign-in.mjs              ← Sign-in script (bundled with this skill)
-├── chrome-profile/           ← Persistent Chrome user data (shared across all sites)
+├── chrome-profile/           ← Default Chrome profile (shared across all sites)
+├── chrome-profile-<name>/    ← Isolated profiles (--profile flag, for multi-user)
 ├── sites.json                ← User-added custom site shortcuts
 ├── auth-cloudflare.json      ← Per-site cookie snapshots
 ├── auth-sentry.json
@@ -107,9 +108,27 @@ playwright-cli goto https://dash.cloudflare.com
 
 No re-authentication needed — the profile holds all sessions.
 
+### Isolated Profiles (Multi-User)
+
+By default all sign-ins share `~/.playwright-cli/chrome-profile/`. To maintain separate sessions (e.g., different accounts on the same service), use `--profile`:
+
+```
+node ~/.playwright-cli/sign-in.mjs login github --profile work
+node ~/.playwright-cli/sign-in.mjs login github --profile personal
+```
+
+Browse with the isolated profile:
+
+```bash
+playwright-cli open https://github.com --headed --browser chrome \
+  --persistent --profile ~/.playwright-cli/chrome-profile-work
+```
+
+See the **capture-auth** skill for a full multi-user/QA workflow.
+
 ### Chrome Profile Lock
 
-Only one Chrome process can use the profile at a time. If the sign-in script fails with "Opening in existing browser session":
+Only one Chrome process can use a profile at a time. If the sign-in script fails with "Opening in existing browser session":
 
 ```bash
 kill $(pgrep -f "chrome-profile")

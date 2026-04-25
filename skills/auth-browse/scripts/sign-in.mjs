@@ -5,15 +5,15 @@
  *
  * Launches real Chrome with automation flags stripped so Google OAuth,
  * Cloudflare Turnstile, and other bot-detection systems allow sign-in.
- * Auth state accumulates in a shared Chrome profile at
- * ~/.playwright-cli/chrome-profile/.
+ * Auth state accumulates in a Chrome profile at ~/.playwright-cli/.
+ * Use --profile <name> for isolated profiles (multi-user/QA).
  *
  * Usage:
- *   node sign-in.mjs login <site|url>   Sign in and save auth state
- *   node sign-in.mjs check [site]       Check saved auth expiry
- *   node sign-in.mjs list               List preconfigured sites
+ *   node sign-in.mjs login <site|url> [--profile <name>]  Sign in and save auth state
+ *   node sign-in.mjs check [site]        Check saved auth expiry
+ *   node sign-in.mjs list                List preconfigured sites
  *   node sign-in.mjs add <name> <url> [waitFor]  Add a new site shortcut
- *   node sign-in.mjs help               Show help
+ *   node sign-in.mjs help                Show help
  *
  * Requires: npm install playwright (in the same directory or globally)
  */
@@ -108,10 +108,18 @@ function authFile(site) {
   return join(BASE_DIR, `auth-${site}.json`);
 }
 
+// ── Profile management ──────────────────────────────────────────────
+
+function profileDir(profileName) {
+  if (!profileName || profileName === 'default') return PROFILE_DIR;
+  return join(BASE_DIR, `chrome-profile-${profileName}`);
+}
+
 // ── Shared browser launch ───────────────────────────────────────────
 
-async function launchBrowser() {
-  mkdirSync(PROFILE_DIR, { recursive: true });
+async function launchBrowser(profileName) {
+  const dir = profileDir(profileName);
+  mkdirSync(dir, { recursive: true });
 
   if (!existsSync(CHROME_PATH)) {
     console.error(`Chrome not found at: ${CHROME_PATH}`);
@@ -120,7 +128,7 @@ async function launchBrowser() {
   }
 
   try {
-    return await chromium.launchPersistentContext(PROFILE_DIR, {
+    return await chromium.launchPersistentContext(dir, {
       executablePath: CHROME_PATH,
       headless: false,
       ignoreDefaultArgs: ['--enable-automation'],
@@ -128,8 +136,8 @@ async function launchBrowser() {
     });
   } catch (err) {
     if (err.message.includes('existing browser session') || err.message.includes('Target page, context or browser has been closed')) {
-      console.error('Chrome is already running with this profile.');
-      console.error('Close it or run: kill $(pgrep -f "chrome-profile")');
+      console.error(`Chrome is already running with profile "${profileName || 'default'}".`);
+      console.error(`Close it or run: kill $(pgrep -f "${basename(dir)}")`);
     } else {
       console.error(`Failed to launch Chrome: ${err.message}`);
     }
@@ -176,11 +184,14 @@ async function waitForSignIn(page, waitForPattern, startUrl, timeoutMs = 120_000
 
 // ── Shared login logic ──────────────────────────────────────────────
 
-async function performLogin({ url, outFile, siteName, waitForPattern }) {
+async function performLogin({ url, outFile, siteName, waitForPattern, profileName }) {
   console.log(`\n🔐 Signing into: ${siteName} (${url})`);
+  if (profileName && profileName !== 'default') {
+    console.log(`   Chrome profile: chrome-profile-${profileName}`);
+  }
   console.log(`   Auth will be saved to: ${outFile}\n`);
 
-  const context = await launchBrowser();
+  const context = await launchBrowser(profileName);
 
   // Ensure cleanup on Ctrl+C
   const cleanup = async () => {
@@ -248,7 +259,7 @@ async function performLogin({ url, outFile, siteName, waitForPattern }) {
 
 // ── Commands ────────────────────────────────────────────────────────
 
-async function login(siteName) {
+async function login(siteName, profileName) {
   const sites = loadSites();
   const site = sites[siteName];
   if (!site) {
@@ -262,10 +273,11 @@ async function login(siteName) {
     outFile: authFile(siteName),
     siteName,
     waitForPattern: site.waitFor,
+    profileName,
   });
 }
 
-async function loginUrl(url) {
+async function loginUrl(url, profileName) {
   try {
     new URL(url);
   } catch {
@@ -279,6 +291,7 @@ async function loginUrl(url) {
     outFile: authFile(hostname),
     siteName: hostname,
     waitForPattern: null, // No auto-detect for arbitrary URLs
+    profileName,
   });
 }
 
@@ -413,18 +426,23 @@ Persistent browser sign-in for external services.
 
 Launches real Chrome with automation flags stripped so Google OAuth,
 Cloudflare Turnstile, and other bot-detection systems allow sign-in.
-Auth state accumulates in a shared Chrome profile at
-~/.playwright-cli/chrome-profile/.
+Auth state accumulates in a Chrome profile at ~/.playwright-cli/.
 
 Usage: node sign-in.mjs <command> [args]
 
 Commands:
-  login <site>                Sign in and save auth state (auto-detects completion)
-  login <url>                 Sign into an arbitrary URL (manual Enter to save)
-  check [site]                Check expiry status of saved auth states
-  list                        List available site shortcuts
-  add <name> <url> [waitFor]  Add a custom site shortcut
-  help                        Show this help
+  login <site> [--profile <name>]   Sign in and save auth state
+  login <url>  [--profile <name>]   Sign into an arbitrary URL
+  check [site]                       Check expiry status of saved auth states
+  list                               List available site shortcuts
+  add <name> <url> [waitFor]         Add a custom site shortcut
+  help                               Show this help
+
+Options:
+  --profile <name>    Use an isolated Chrome profile (chrome-profile-<name>).
+                      Useful for multiple accounts on the same domain
+                      (e.g., admin vs planner on the same app).
+                      Without this flag, uses the shared default profile.
 
 Sites: ${Object.keys(sites).join(', ')}
 
@@ -434,29 +452,49 @@ Examples:
   node sign-in.mjs check
   node sign-in.mjs add myapp https://myapp.com/login myapp.com/dashboard
 
+  # Multi-user / QA profiles
+  node sign-in.mjs login seatify-admin --profile seatify-admin
+  node sign-in.mjs login seatify-planner --profile seatify-planner
+
 After signing in, browse authenticated with playwright-cli:
   playwright-cli open <url> --headed --browser chrome \\
     --persistent --profile ~/.playwright-cli/chrome-profile
+
+  # With an isolated profile:
+  playwright-cli open <url> --headed --browser chrome \\
+    --persistent --profile ~/.playwright-cli/chrome-profile-seatify-admin
 
 Profile & auth files: ~/.playwright-cli/
 `);
 }
 
 // ── CLI parsing ─────────────────────────────────────────────────────
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+
+// Extract --profile <name> from anywhere in the args
+let cliProfile;
+const args = [];
+for (let i = 0; i < rawArgs.length; i++) {
+  if (rawArgs[i] === '--profile' && i + 1 < rawArgs.length) {
+    cliProfile = rawArgs[++i];
+  } else {
+    args.push(rawArgs[i]);
+  }
+}
+
 const command = args[0] || 'help';
 
 switch (command) {
   case 'login': {
     const target = args[1];
     if (!target) {
-      console.error('Usage: sign-in.mjs login <site|url>');
+      console.error('Usage: sign-in.mjs login <site|url> [--profile <name>]');
       process.exit(1);
     }
     if (target.startsWith('http')) {
-      await loginUrl(target);
+      await loginUrl(target, cliProfile);
     } else {
-      await login(target);
+      await login(target, cliProfile);
     }
     break;
   }
