@@ -51,7 +51,7 @@ const CHROME_PATH = CHROME_PATHS[process.platform] || CHROME_PATHS.darwin;
 // Built-in site shortcuts. waitFor patterns must NOT match the login URL.
 const DEFAULT_SITES = {
   github:     { url: 'https://github.com/login',              waitFor: 'github.com/dashboard' },
-  cloudflare: { url: 'https://dash.cloudflare.com/',           waitFor: '/home' },
+  cloudflare: { url: 'https://dash.cloudflare.com/',           waitFor: 'dash.cloudflare.com/home' },
   vercel:     { url: 'https://vercel.com/login',               waitFor: 'vercel.com/~' },
   sentry:     { url: 'https://sentry.io/auth/login/',          waitFor: 'sentry.io/organizations' },
   posthog:    { url: 'https://us.posthog.com/',                 waitFor: '/project' },
@@ -75,16 +75,19 @@ function loadSites() {
   return sites;
 }
 
-function saveSite(name, url, waitFor) {
-  // Validate site name (alphanumeric, hyphens, underscores only)
-  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
-    console.error(`Invalid site name "${name}". Use only letters, numbers, hyphens, and underscores.`);
+function validateName(value, label) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(value)) {
+    console.error(`Invalid ${label} "${value}". Use only letters, numbers, hyphens, and underscores.`);
     process.exit(1);
   }
+}
 
-  // Validate URL
+function saveSite(name, url, waitFor) {
+  validateName(name, 'site name');
+
+  let parsed;
   try {
-    new URL(url);
+    parsed = new URL(url);
   } catch {
     console.error(`Invalid URL: "${url}"`);
     process.exit(1);
@@ -99,23 +102,26 @@ function saveSite(name, url, waitFor) {
       custom = {};
     }
   }
-  custom[name] = { url, waitFor: waitFor || new URL(url).hostname };
+  custom[name] = { url, waitFor: waitFor || parsed.hostname };
   mkdirSync(BASE_DIR, { recursive: true });
-  writeFileSync(SITES_FILE, JSON.stringify(custom, null, 2) + '\n');
+  try {
+    writeFileSync(SITES_FILE, JSON.stringify(custom, null, 2) + '\n');
+  } catch (err) {
+    console.error(`Failed to write ${SITES_FILE}: ${err.message}`);
+    process.exit(1);
+  }
 }
 
 function authFile(site) {
-  return join(BASE_DIR, `auth-${site}.json`);
+  const safe = site.replace(/[^a-zA-Z0-9_-]/g, '-');
+  return join(BASE_DIR, `auth-${safe}.json`);
 }
 
 // ── Profile management ──────────────────────────────────────────────
 
 function profileDir(profileName) {
   if (!profileName || profileName === 'default') return PROFILE_DIR;
-  if (!/^[a-zA-Z0-9_-]+$/.test(profileName)) {
-    console.error(`Invalid profile name "${profileName}". Use only letters, numbers, hyphens, and underscores.`);
-    process.exit(1);
-  }
+  validateName(profileName, 'profile name');
   return join(BASE_DIR, `chrome-profile-${profileName}`);
 }
 
@@ -159,7 +165,12 @@ async function waitForSignIn(page, waitForPattern, startUrl, timeoutMs = 120_000
     (async () => {
       const start = Date.now();
       while (Date.now() - start < timeoutMs) {
-        const url = page.url();
+        let url;
+        try {
+          url = page.url();
+        } catch {
+          return 'closed';
+        }
         // Only match after navigating away from the starting URL
         if (url !== startUrl && url.includes(waitForPattern)) {
           // Small delay to let cookies settle after redirect
@@ -173,15 +184,17 @@ async function waitForSignIn(page, waitForPattern, startUrl, timeoutMs = 120_000
     // Manual: user presses Enter
     new Promise((resolve) => {
       stdinHandler = () => resolve('manual');
-      process.stdin.once('data', stdinHandler);
+      process.stdin.on('data', stdinHandler);
     }),
   ]);
 
-  // Clean up the losing branch
+  // Clean up stdin listener from the losing branch
   if (stdinHandler) {
     process.stdin.removeListener('data', stdinHandler);
   }
-  process.stdin.unref();
+  if (result !== 'manual') {
+    process.stdin.unref();
+  }
 
   return result;
 }
@@ -196,15 +209,29 @@ async function performLogin({ url, outFile, siteName, waitForPattern, profileNam
   console.log(`   Auth will be saved to: ${outFile}\n`);
 
   const context = await launchBrowser(profileName);
+  const profileHint = profileName ? `chrome-profile-${profileName}` : 'chrome-profile';
 
   // Ensure cleanup on Ctrl+C
   const cleanup = async () => {
     console.log('\nInterrupted — closing browser...');
-    await context.close().catch(() => {});
+    try {
+      await context.close();
+    } catch (err) {
+      console.error(`Warning: could not close browser cleanly: ${err.message}`);
+      console.error(`You may need to run: kill $(pgrep -f "${profileHint}")`);
+    }
     process.exit(130);
   };
   process.on('SIGINT', cleanup);
   process.on('SIGTERM', cleanup);
+
+  // Helper to clean up and exit on error
+  const bail = async (code = 1) => {
+    process.removeListener('SIGINT', cleanup);
+    process.removeListener('SIGTERM', cleanup);
+    await context.close().catch(() => {});
+    process.exit(code);
+  };
 
   const page = context.pages()[0] || await context.newPage();
 
@@ -212,8 +239,7 @@ async function performLogin({ url, outFile, siteName, waitForPattern, profileNam
     await page.goto(url, { waitUntil: 'domcontentloaded' });
   } catch (err) {
     console.error(`Failed to navigate to ${url}: ${err.message}`);
-    await context.close().catch(() => {});
-    process.exit(1);
+    await bail();
   }
 
   const startUrl = page.url();
@@ -225,7 +251,10 @@ async function performLogin({ url, outFile, siteName, waitForPattern, profileNam
 
     const result = await waitForSignIn(page, waitForPattern, startUrl);
 
-    if (result === 'timeout') {
+    if (result === 'closed') {
+      console.log('Browser was closed. No auth state saved.');
+      await bail();
+    } else if (result === 'timeout') {
       console.log('⚠ Timed out waiting for sign-in. Saving current state anyway.');
     } else if (result === 'auto') {
       console.log('✓ Sign-in detected automatically.');
@@ -246,18 +275,21 @@ async function performLogin({ url, outFile, siteName, waitForPattern, profileNam
     await context.storageState({ path: outFile });
   } catch (err) {
     console.error(`Failed to save auth state: ${err.message}`);
-    await context.close().catch(() => {});
-    process.exit(1);
+    await bail();
   }
 
   console.log(`Auth state saved to ${outFile}`);
 
-  const state = JSON.parse(readFileSync(outFile, 'utf-8'));
-  printCookieSummary(state, siteName);
+  try {
+    const state = JSON.parse(readFileSync(outFile, 'utf-8'));
+    printCookieSummary(state, siteName);
+  } catch {
+    console.error('Warning: could not read saved auth for summary (auth was saved successfully).');
+  }
 
   process.removeListener('SIGINT', cleanup);
   process.removeListener('SIGTERM', cleanup);
-  await context.close();
+  await context.close().catch(() => {});
   process.exit(0);
 }
 
@@ -282,14 +314,15 @@ async function login(siteName, profileName) {
 }
 
 async function loginUrl(url, profileName) {
+  let parsed;
   try {
-    new URL(url);
+    parsed = new URL(url);
   } catch {
     console.error(`Invalid URL: "${url}"`);
     process.exit(1);
   }
 
-  const hostname = new URL(url).hostname.replace(/\./g, '-');
+  const hostname = parsed.hostname.replace(/\./g, '-');
   await performLogin({
     url,
     outFile: authFile(hostname),
@@ -302,7 +335,7 @@ async function loginUrl(url, profileName) {
 function check(siteName) {
   const sites = loadSites();
   if (siteName) {
-    checkSite(siteName, sites);
+    checkSite(siteName);
     return;
   }
 
@@ -316,7 +349,7 @@ function check(siteName) {
     if (existsSync(file)) {
       found = true;
       checked.add(basename(file));
-      checkSite(site, sites);
+      checkSite(site);
       console.log('');
     }
   }
@@ -327,7 +360,7 @@ function check(siteName) {
       if (file.startsWith('auth-') && file.endsWith('.json') && !checked.has(file)) {
         found = true;
         const name = file.replace(/^auth-/, '').replace(/\.json$/, '');
-        checkSite(name, sites);
+        checkSite(name);
         console.log('');
       }
     }
@@ -340,8 +373,8 @@ function check(siteName) {
   }
 }
 
-function checkSite(siteName, sites) {
-  const file = (sites && sites[siteName]) ? authFile(siteName) : join(BASE_DIR, `auth-${siteName}.json`);
+function checkSite(siteName) {
+  const file = authFile(siteName);
 
   if (!existsSync(file)) {
     console.log(`${siteName}: no saved auth (${file} not found)`);
@@ -492,43 +525,48 @@ for (let i = 0; i < rawArgs.length; i++) {
 
 const command = args[0] || 'help';
 
-switch (command) {
-  case 'login': {
-    const target = args[1];
-    if (!target) {
-      console.error('Usage: sign-in.mjs login <site|url> [--profile <name>]');
-      process.exit(1);
+try {
+  switch (command) {
+    case 'login': {
+      const target = args[1];
+      if (!target) {
+        console.error('Usage: sign-in.mjs login <site|url> [--profile <name>]');
+        process.exit(1);
+      }
+      if (target.startsWith('http')) {
+        await loginUrl(target, cliProfile);
+      } else {
+        await login(target, cliProfile);
+      }
+      break;
     }
-    if (target.startsWith('http')) {
-      await loginUrl(target, cliProfile);
-    } else {
-      await login(target, cliProfile);
+    case 'check':
+      check(args[1]);
+      break;
+    case 'list': {
+      const sites = loadSites();
+      console.log('Available sites:');
+      for (const [name, site] of Object.entries(sites)) {
+        console.log(`  ${name.padEnd(15)} ${site.url}`);
+      }
+      break;
     }
-    break;
+    case 'add': {
+      const [, name, url, waitFor] = args;
+      if (!name || !url) {
+        console.error('Usage: sign-in.mjs add <name> <url> [waitFor]');
+        process.exit(1);
+      }
+      saveSite(name, url, waitFor);
+      console.log(`Added site shortcut: ${name} → ${url}`);
+      break;
+    }
+    case 'help':
+    default:
+      printHelp();
+      break;
   }
-  case 'check':
-    check(args[1]);
-    break;
-  case 'list': {
-    const sites = loadSites();
-    console.log('Available sites:');
-    for (const [name, site] of Object.entries(sites)) {
-      console.log(`  ${name.padEnd(15)} ${site.url}`);
-    }
-    break;
-  }
-  case 'add': {
-    const [, name, url, waitFor] = args;
-    if (!name || !url) {
-      console.error('Usage: sign-in.mjs add <name> <url> [waitFor]');
-      process.exit(1);
-    }
-    saveSite(name, url, waitFor);
-    console.log(`Added site shortcut: ${name} → ${url}`);
-    break;
-  }
-  case 'help':
-  default:
-    printHelp();
-    break;
+} catch (err) {
+  console.error(`Fatal error: ${err.message}`);
+  process.exit(1);
 }

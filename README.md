@@ -123,11 +123,12 @@ Each `--profile <name>` creates an independent Chrome user data directory (`chro
 
 ## How auth-browse bypasses bot detection
 
-Google OAuth and Cloudflare Turnstile block automated browsers. The sign-in script launches real Chrome with three flags:
+Google OAuth and Cloudflare Turnstile block automated browsers. The sign-in script uses four techniques to bypass detection:
 
 1. **Real Chrome executable** — not Playwright's bundled Chromium
-2. **`--enable-automation` stripped** — removes the automation signal
-3. **`AutomationControlled` disabled** — prevents `navigator.webdriver = true`
+2. **Headed mode** — headless rendering is blocked by Cloudflare regardless of other flags
+3. **`--enable-automation` stripped** — removes the automation signal
+4. **`AutomationControlled` disabled** — prevents `navigator.webdriver = true`
 
 A persistent Chrome profile (`~/.playwright-cli/chrome-profile/`) accumulates sessions across all services. When browsing with `playwright-cli --persistent --profile`, every service is already authenticated.
 

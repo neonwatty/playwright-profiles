@@ -128,7 +128,7 @@ See the **capture-auth** skill for a full multi-user/QA workflow.
 
 ### Chrome Profile Lock
 
-Only one Chrome process can use a profile at a time. If the sign-in script fails with "Opening in existing browser session":
+Only one Chrome process can use a profile at a time. If the sign-in script fails with "Chrome is already running with profile":
 
 ```bash
 kill $(pgrep -f "chrome-profile")

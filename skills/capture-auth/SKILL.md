@@ -53,7 +53,7 @@ Tell the user to run the sign-in command in a separate terminal:
 node ~/.playwright-cli/sign-in.mjs login <name>
 ```
 
-This is interactive — Claude cannot run it. The user signs in manually. If a `waitFor` pattern was configured, the script auto-detects completion. Otherwise the user presses Enter.
+This is interactive — Claude cannot run it. The user signs in manually. The script auto-detects completion using the `waitFor` pattern (defaults to the hostname when omitted from `add`). The user can also press Enter at any time to save manually.
 
 After the user confirms sign-in is complete, verify:
 
