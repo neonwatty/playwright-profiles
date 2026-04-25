@@ -63,13 +63,22 @@ node ~/.playwright-cli/sign-in.mjs check <name>
 
 ### Step 4: Test browsing
 
-Open the app's authenticated page to verify the session works:
+For the user's own apps (no bot detection), use `state-load` — it injects cookies into the existing headless session without interfering with per-repo session isolation or `cli.config.json` settings:
+
+```bash
+playwright-cli open <app-url>
+playwright-cli state-load ~/.playwright-cli/auth-<name>.json
+playwright-cli reload
+playwright-cli snapshot
+```
+
+Take a snapshot to confirm the user is signed in. If the app redirects to the login page, the session may not have saved correctly — re-run sign-in.
+
+**Only use `--persistent --profile` when `state-load` fails** (sites with bot detection like Cloudflare Turnstile or Google OAuth):
 
 ```bash
 playwright-cli open <app-url> --headed --browser chrome --persistent --profile ~/.playwright-cli/chrome-profile
 ```
-
-Take a snapshot to confirm the user is signed in. If the app redirects to the login page, the session may not have saved correctly — re-run sign-in.
 
 ### Step 5: Confirm and summarize
 
@@ -77,7 +86,8 @@ Tell the user:
 - Their app is now registered as `<name>`
 - Future sign-ins: `node ~/.playwright-cli/sign-in.mjs login <name>`
 - To browse authenticated: just ask Claude to "open deckchecker" or "browse seatify"
-- Auth state persists in the Chrome profile — different domains coexist, but multiple accounts on the same domain require `--profile` (see Multi-User section above)
+- Default browsing uses `state-load` (headless, non-interfering with session isolation)
+- Each site gets its own auth file (`auth-<name>.json`); multiple accounts on the same domain need distinct site names (e.g., `seatify-admin`, `seatify-planner`)
 
 ## Multi-User / QA Profiles
 
@@ -103,12 +113,27 @@ The `--profile <name>` flag creates an isolated Chrome directory at `~/.playwrig
 
 ### Step 3: Browse as a specific user
 
+Multi-user profiles on the same domain share auth files keyed by site name (e.g., `auth-seatify-admin.json`, `auth-seatify-planner.json`). Since each role has a distinct site name, `state-load` works:
+
+```bash
+playwright-cli open https://seatify.app/dashboard
+playwright-cli state-load ~/.playwright-cli/auth-seatify-admin.json
+playwright-cli reload
+```
+
+To switch users, load a different auth file:
+
+```bash
+playwright-cli state-load ~/.playwright-cli/auth-seatify-planner.json
+playwright-cli reload
+```
+
+If `state-load` doesn't work (bot detection), fall back to the persistent profile:
+
 ```bash
 playwright-cli open https://seatify.app/dashboard --headed --browser chrome \
   --persistent --profile ~/.playwright-cli/chrome-profile-seatify-admin
 ```
-
-To switch users, close the browser and re-open with a different profile path.
 
 ### Naming convention
 
@@ -155,16 +180,38 @@ Once a session is captured, the user can ask Claude to browse the app naturally:
 - "Browse seatify as admin"
 - "Check the planner view on seatify"
 
-Claude should check auth status first, then open with the appropriate profile:
+Claude should check auth status first, then browse using the two-tier approach:
+
+### Tier 1: `state-load` (default for custom apps)
+
+Injects cookies into the existing headless session. Non-interfering — respects `cli.config.json`, session isolation, and headless mode.
 
 ```bash
-# Default profile (single-user apps)
+# Single-user app
+playwright-cli open <url>
+playwright-cli state-load ~/.playwright-cli/auth-<name>.json
+playwright-cli reload
+
+# Multi-user / QA — each role is a separate site name
+playwright-cli open <url>
+playwright-cli state-load ~/.playwright-cli/auth-seatify-admin.json
+playwright-cli reload
+```
+
+When the user mentions a role ("as admin", "as planner"), map it to the corresponding auth file (e.g., `auth-deckchecker-admin.json`).
+
+### Tier 2: `--persistent --profile` (bot-protected sites only)
+
+Only needed when `state-load` fails — typically external services with Cloudflare Turnstile or Google OAuth that fingerprint the browser itself.
+
+```bash
+# Default profile
 playwright-cli open <url> --headed --browser chrome \
   --persistent --profile ~/.playwright-cli/chrome-profile
 
-# Named profile (multi-user/QA)
+# Named profile (multi-user)
 playwright-cli open <url> --headed --browser chrome \
   --persistent --profile ~/.playwright-cli/chrome-profile-<name>
 ```
 
-When the user mentions a role ("as admin", "as planner"), map it to the corresponding profile name.
+This overrides session isolation and requires headed mode. See the **auth-browse** skill for details.

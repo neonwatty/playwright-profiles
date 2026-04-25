@@ -81,13 +81,11 @@ For arbitrary URLs without adding a shortcut: `node ~/.playwright-cli/sign-in.mj
 
 ### Step 3: Browse authenticated
 
-**Default (works for all sites including bot-protected ones):**
+Choose the right tier based on the target site:
 
-```bash
-playwright-cli open <url> --headed --browser chrome --persistent --profile ~/.playwright-cli/chrome-profile
-```
+**Tier 1: `state-load` (most sites — GitHub, Vercel, Netlify, Railway, Render, Sentry, PostHog, Supabase):**
 
-**Headless mode (simpler sites only — NOT Cloudflare, Google):**
+Injects cookies into the existing headless session. Non-interfering — respects `cli.config.json` and per-repo session isolation.
 
 ```bash
 playwright-cli open <url>
@@ -95,7 +93,15 @@ playwright-cli state-load ~/.playwright-cli/auth-<site>.json
 playwright-cli reload
 ```
 
-When unsure whether a site has bot detection, default to the headed/persistent approach.
+**Tier 2: `--persistent --profile` (bot-protected sites — Cloudflare, Google, AWS):**
+
+Uses real Chrome with persistent profile. Overrides session isolation and requires headed mode, but bypasses bot detection.
+
+```bash
+playwright-cli open <url> --headed --browser chrome --persistent --profile ~/.playwright-cli/chrome-profile
+```
+
+**When unsure**, try `state-load` first. If the site redirects to a login page or shows a bot challenge, fall back to the persistent profile approach.
 
 ### Navigating between services
 
@@ -117,11 +123,19 @@ node ~/.playwright-cli/sign-in.mjs login github --profile work
 node ~/.playwright-cli/sign-in.mjs login github --profile personal
 ```
 
-Browse with the isolated profile:
+Browse with the isolated profile. Note: `state-load` uses the auth file keyed by site name, so multiple profiles on the same domain (e.g., `github --profile work` and `github --profile personal`) both write to `auth-github.json` — the second overwrites the first. For multi-user isolation on the same domain, use the persistent profile approach:
 
 ```bash
 playwright-cli open https://github.com --headed --browser chrome \
   --persistent --profile ~/.playwright-cli/chrome-profile-work
+```
+
+For different sites (no multi-user conflict), `state-load` works fine:
+
+```bash
+playwright-cli open https://github.com
+playwright-cli state-load ~/.playwright-cli/auth-github.json
+playwright-cli reload
 ```
 
 See the **capture-auth** skill for a full multi-user/QA workflow.
