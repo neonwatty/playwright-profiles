@@ -61,6 +61,10 @@ if (!(process.platform in CHROME_PATHS)) {
 }
 const CHROME_PATH = CHROME_PATHS[process.platform] || CHROME_PATHS.darwin;
 
+// ── Tier constants ───────────────────────────────────────────────────
+const VALID_TIERS = new Set(["chromium", "chrome"]);
+const DEFAULT_TIER = "chromium";
+
 // ── Sites config ────────────────────────────────────────────────────
 
 // Built-in site shortcuts. waitFor patterns must NOT match the login URL.
@@ -206,26 +210,43 @@ function checkProfileLock(dir) {
   }
 }
 
-async function launchBrowser(profileName) {
-  checkChromeRunning();
+async function launchBrowser(profileName, tier = DEFAULT_TIER) {
+  if (tier === "chrome") {
+    checkChromeRunning();
+  }
   const { chromium } = await import("playwright");
   const dir = profileDir(profileName);
   checkProfileLock(dir);
   mkdirSync(dir, { recursive: true });
 
-  if (!existsSync(CHROME_PATH)) {
-    console.error(`Chrome not found at: ${CHROME_PATH}`);
-    console.error("Install Google Chrome or edit CHROME_PATHS in this script.");
-    process.exit(1);
+  if (tier === "chrome") {
+    if (!existsSync(CHROME_PATH)) {
+      console.error(`Chrome not found at: ${CHROME_PATH}`);
+      console.error(
+        "Install Google Chrome or edit CHROME_PATHS in this script.",
+      );
+      process.exit(1);
+    }
   }
 
+  const launchOptions =
+    tier === "chrome"
+      ? {
+          executablePath: CHROME_PATH,
+          headless: false,
+          ignoreDefaultArgs: ["--enable-automation"],
+          args: ["--disable-blink-features=AutomationControlled"],
+        }
+      : {
+          headless: false,
+        };
+
+  console.log(
+    `  Using ${tier === "chrome" ? "real Chrome" : "Playwright Chromium"}`,
+  );
+
   try {
-    return await chromium.launchPersistentContext(dir, {
-      executablePath: CHROME_PATH,
-      headless: false,
-      ignoreDefaultArgs: ["--enable-automation"],
-      args: ["--disable-blink-features=AutomationControlled"],
-    });
+    return await chromium.launchPersistentContext(dir, launchOptions);
   } catch (err) {
     if (
       err.message.includes("existing browser session") ||
@@ -625,9 +646,6 @@ Profile & auth files: ~/.playwright-cli/
 }
 
 // ── Tier resolution ─────────────────────────────────────────────────
-
-const VALID_TIERS = new Set(["chromium", "chrome"]);
-const DEFAULT_TIER = "chromium";
 
 function resolveTier({ cliTier, siteConfig }) {
   if (cliTier !== undefined) {
