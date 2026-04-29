@@ -56,12 +56,6 @@ node ~/.playwright-cli/sign-in.mjs login <name>
 
 This is interactive — Claude cannot run it. The user signs in manually. The script auto-detects completion using the `waitFor` pattern (defaults to the hostname when omitted from `add`). The user can also press Enter at any time to save manually.
 
-After the user confirms sign-in is complete, verify:
-
-```bash
-node ~/.playwright-cli/sign-in.mjs check <name>
-```
-
 ### Step 4: Validate and test
 
 After the user confirms sign-in is complete, validate the captured auth:

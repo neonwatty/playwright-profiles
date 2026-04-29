@@ -115,7 +115,7 @@ export function classifyCookies(cookies) {
 }
 
 /**
- * Analyze the health of cookies in a storageState file.
+ * Analyze the health of an array of cookies (e.g., from a storageState file).
  * Returns { status, classification, soonestAuthExpiry, jwtIssues, warnings }.
  *
  * status: 'healthy' | 'expired' | 'degraded' | 'empty'
@@ -150,8 +150,12 @@ export function analyzeCookieHealth(cookies) {
     let realExp;
     if (supabase) {
       if (supabase.expires_at < now) {
+        const shellMsg =
+          c.expires > 0
+            ? `cookie shell says ${formatDelta(c.expires - now)} remaining`
+            : "session-only cookie (no browser expiry)";
         jwtIssues.push(
-          `Supabase session "${c.name}" expired ${formatDelta(now - supabase.expires_at)} ago (cookie shell says ${formatDelta(c.expires - now)} remaining)`,
+          `Supabase session "${c.name}" expired ${formatDelta(now - supabase.expires_at)} ago (${shellMsg})`,
         );
       } else if (supabase.access_token) {
         const tokenExp = decodeJwtExp(supabase.access_token);
@@ -165,8 +169,12 @@ export function analyzeCookieHealth(cookies) {
     } else {
       const jwtExp = decodeJwtExp(c.value);
       if (jwtExp !== null && jwtExp < now) {
+        const shellMsg =
+          c.expires > 0
+            ? `cookie shell says ${formatDelta(c.expires - now)} remaining`
+            : "session-only cookie (no browser expiry)";
         jwtIssues.push(
-          `JWT "${c.name}" expired ${formatDelta(now - jwtExp)} ago (cookie shell says ${formatDelta(c.expires - now)} remaining)`,
+          `JWT "${c.name}" expired ${formatDelta(now - jwtExp)} ago (${shellMsg})`,
         );
       }
       realExp = jwtExp ?? (c.expires > 0 ? c.expires : null);

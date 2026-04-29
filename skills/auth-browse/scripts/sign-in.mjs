@@ -29,6 +29,7 @@ import {
   readFileSync,
   writeFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
 } from "fs";
@@ -188,7 +189,16 @@ function checkChromeRunning() {
 
 function checkProfileLock(dir) {
   const lockPath = join(dir, "SingletonLock");
-  if (existsSync(lockPath)) {
+  // Chrome creates SingletonLock as a dangling symlink (hostname-pid).
+  // existsSync follows symlinks and returns false for dangling ones, so use lstatSync.
+  let lockExists = false;
+  try {
+    lstatSync(lockPath);
+    lockExists = true;
+  } catch {
+    // No lock file — safe to proceed
+  }
+  if (lockExists) {
     console.error(`\n⛔ Profile directory is locked: ${dir}`);
     console.error("   Another Chrome process is using this profile.");
     console.error(`   Run: rm "${lockPath}" (if no Chrome process is running)`);
@@ -371,6 +381,7 @@ async function performLogin({
   }
 
   // Filter cookies to only the target domain (removes cross-contamination)
+  let filteredState;
   try {
     const rawState = JSON.parse(readFileSync(outFile, "utf-8"));
     const originalCount = rawState.cookies.length;
@@ -380,19 +391,32 @@ async function performLogin({
         `  Filtered cookies: ${originalCount} → ${rawState.cookies.length} (removed ${originalCount - rawState.cookies.length} unrelated domains)`,
       );
     }
-    writeFileSync(outFile, JSON.stringify(rawState, null, 2) + "\n");
+    filteredState = rawState;
+    try {
+      writeFileSync(outFile, JSON.stringify(rawState, null, 2) + "\n");
+    } catch (writeErr) {
+      console.error(
+        `Warning: could not save filtered cookies: ${writeErr.message}`,
+      );
+      console.error(
+        "Auth was saved but may contain cookies from unrelated domains.",
+      );
+    }
   } catch (err) {
     console.error(`Warning: could not filter cookies: ${err.message}`);
+    console.error(
+      "Auth was saved but may contain cookies from unrelated domains.",
+    );
   }
 
   console.log(`Auth state saved to ${outFile}`);
 
   try {
-    const state = JSON.parse(readFileSync(outFile, "utf-8"));
+    const state = filteredState ?? JSON.parse(readFileSync(outFile, "utf-8"));
     printCookieSummary(state, siteName);
-  } catch {
+  } catch (err) {
     console.error(
-      "Warning: could not read saved auth for summary (auth was saved successfully).",
+      `Warning: could not read saved auth for summary: ${err.message} (auth was saved successfully).`,
     );
   }
 

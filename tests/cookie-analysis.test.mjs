@@ -9,6 +9,7 @@ import {
   EPHEMERAL,
   filterCookiesByDomain,
   analyzeCookieHealth,
+  formatDelta,
 } from "../skills/auth-browse/scripts/cookie-analysis.mjs";
 
 describe("decodeSupabaseCookie (UT-01)", () => {
@@ -373,5 +374,49 @@ describe("analyzeCookieHealth (UT-10)", () => {
     ];
     const health = analyzeCookieHealth(cookies);
     expect(health.soonestAuthExpiry.name).toBe("auth-sooner");
+  });
+
+  it("returns empty status for null input", () => {
+    const health = analyzeCookieHealth(null);
+    expect(health.status).toBe("empty");
+    expect(health.soonestAuthExpiry).toBeNull();
+    expect(health.jwtIssues).toHaveLength(0);
+    expect(health.warnings).toEqual(["No cookies saved"]);
+  });
+
+  it("returns empty status for empty array", () => {
+    const health = analyzeCookieHealth([]);
+    expect(health.status).toBe("empty");
+    expect(health.classification.total).toBe(0);
+  });
+});
+
+describe("formatDelta (UT-12)", () => {
+  it("formats seconds", () => {
+    expect(formatDelta(0)).toBe("0s");
+    expect(formatDelta(30)).toBe("30s");
+    expect(formatDelta(59)).toBe("59s");
+  });
+
+  it("formats minutes", () => {
+    expect(formatDelta(60)).toBe("1m");
+    expect(formatDelta(90)).toBe("2m");
+    expect(formatDelta(3599)).toBe("60m");
+  });
+
+  it("formats hours", () => {
+    expect(formatDelta(3600)).toBe("1h");
+    expect(formatDelta(7200)).toBe("2h");
+    expect(formatDelta(86399)).toBe("24h");
+  });
+
+  it("formats days", () => {
+    expect(formatDelta(86400)).toBe("1d");
+    expect(formatDelta(172800)).toBe("2d");
+  });
+
+  it("handles negative values via Math.abs", () => {
+    expect(formatDelta(-7200)).toBe("2h");
+    expect(formatDelta(-30)).toBe("30s");
   });
 });

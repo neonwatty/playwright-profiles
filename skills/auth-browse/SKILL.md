@@ -39,6 +39,7 @@ First-time setup requires installing the script and its dependency:
 ```bash
 mkdir -p ~/.playwright-cli
 cp <path-to-this-skill>/scripts/sign-in.mjs ~/.playwright-cli/sign-in.mjs
+cp <path-to-this-skill>/scripts/cookie-analysis.mjs ~/.playwright-cli/cookie-analysis.mjs
 cd ~/.playwright-cli && npm init -y && npm install playwright
 ```
 
@@ -50,7 +51,7 @@ skills/auth-browse/scripts/sign-in.mjs
 
 ## Workflow
 
-## Pre-Browse Validation
+### Pre-Browse Validation
 
 Before browsing any external service, perform these checks:
 
