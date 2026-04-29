@@ -113,6 +113,112 @@ export function classifyCookies(cookies) {
   return result;
 }
 
+/**
+ * Analyze the health of cookies in a storageState file.
+ * Returns { status, classification, soonestAuthExpiry, jwtIssues, warnings }.
+ *
+ * status: 'healthy' | 'expired' | 'degraded' | 'empty'
+ */
+export function analyzeCookieHealth(cookies) {
+  if (!cookies || cookies.length === 0) {
+    return {
+      status: "empty",
+      classification: classifyCookies([]),
+      soonestAuthExpiry: null,
+      jwtIssues: [],
+      warnings: ["No cookies saved"],
+    };
+  }
+
+  const classification = classifyCookies(cookies);
+  const now = Date.now() / 1000;
+  const jwtIssues = [];
+  const warnings = [];
+
+  const authCookies = cookies.filter(
+    (c) => isAuthCookie(c.name) && !EPHEMERAL.has(c.name),
+  );
+
+  if (authCookies.length === 0) {
+    warnings.push("No auth-relevant cookies found — session may not restore");
+  }
+
+  for (const c of authCookies) {
+    const supabase = decodeSupabaseCookie(c.value);
+    if (supabase) {
+      if (supabase.expires_at < now) {
+        jwtIssues.push(
+          `Supabase session "${c.name}" expired ${formatDelta(now - supabase.expires_at)} ago (cookie shell says ${formatDelta(c.expires - now)} remaining)`,
+        );
+      }
+      continue;
+    }
+    const jwtExp = decodeJwtExp(c.value);
+    if (jwtExp !== null && jwtExp < now) {
+      jwtIssues.push(
+        `JWT "${c.name}" expired ${formatDelta(now - jwtExp)} ago (cookie shell says ${formatDelta(c.expires - now)} remaining)`,
+      );
+    }
+  }
+
+  if (classification.session_only > 0) {
+    const pct = Math.round(
+      (classification.session_only / classification.total) * 100,
+    );
+    if (pct > 30) {
+      warnings.push(
+        `${classification.session_only} session-only cookies (${pct}%) will not survive state-load — use persistent profile instead`,
+      );
+    }
+  }
+
+  let soonestAuthExpiry = null;
+  for (const c of authCookies) {
+    let realExp = c.expires > 0 ? c.expires : null;
+    const supabase = decodeSupabaseCookie(c.value);
+    if (supabase) {
+      realExp = supabase.expires_at;
+    } else {
+      const jwtExp = decodeJwtExp(c.value);
+      if (jwtExp !== null) {
+        realExp = jwtExp;
+      }
+    }
+    if (
+      realExp !== null &&
+      (soonestAuthExpiry === null || realExp < soonestAuthExpiry.expires)
+    ) {
+      soonestAuthExpiry = {
+        name: c.name,
+        expires: realExp,
+        remaining: realExp - now,
+      };
+    }
+  }
+
+  let status;
+  if (
+    jwtIssues.length > 0 ||
+    (soonestAuthExpiry && soonestAuthExpiry.remaining < 0)
+  ) {
+    status = "expired";
+  } else if (warnings.length > 0) {
+    status = "degraded";
+  } else {
+    status = "healthy";
+  }
+
+  return { status, classification, soonestAuthExpiry, jwtIssues, warnings };
+}
+
+function formatDelta(seconds) {
+  const abs = Math.abs(seconds);
+  if (abs < 60) return `${Math.round(abs)}s`;
+  if (abs < 3600) return `${Math.round(abs / 60)}m`;
+  if (abs < 86400) return `${Math.round(abs / 3600)}h`;
+  return `${Math.round(abs / 86400)}d`;
+}
+
 /** OAuth provider domains to always keep for non-localhost targets. */
 const OAUTH_DOMAINS = ["accounts.google.com", "google.com"];
 

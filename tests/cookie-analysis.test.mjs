@@ -7,6 +7,7 @@ import {
   classifyCookies,
   EPHEMERAL,
   filterCookiesByDomain,
+  analyzeCookieHealth,
 } from "../skills/auth-browse/scripts/cookie-analysis.mjs";
 
 describe("decodeSupabaseCookie (UT-01)", () => {
@@ -254,5 +255,76 @@ describe("filterCookiesByDomain (UT-11)", () => {
     const cookies = [makeCookie(), makeCookie()];
     const filtered = filterCookiesByDomain(cookies, "not-a-url");
     expect(filtered).toHaveLength(2);
+  });
+});
+
+describe("analyzeCookieHealth (UT-10)", () => {
+  it("reports healthy for all-valid cookies", () => {
+    const cookies = [
+      makeCookie({ name: "auth-token", expires: Date.now() / 1000 + 86400 }),
+      makeCookie({ name: "_ga", expires: Date.now() / 1000 + 86400 }),
+    ];
+    const health = analyzeCookieHealth(cookies);
+    expect(health.status).toBe("healthy");
+    expect(health.classification.valid).toBe(2);
+  });
+
+  it("reports expired for all-expired auth cookies", () => {
+    const cookies = [makeCookie({ name: "auth-token", expires: 1577836800 })];
+    const health = analyzeCookieHealth(cookies);
+    expect(health.status).toBe("expired");
+    expect(health.soonestAuthExpiry.remaining).toBeLessThan(0);
+  });
+
+  it("reports expired when JWT inside cookie is expired (not cookie shell)", () => {
+    const expiredJwt = makeJwt({ sub: "u", exp: 1577836800, iat: 1577750400 });
+    const cookies = [
+      makeCookie({
+        name: "jwt-session",
+        value: expiredJwt,
+        expires: Date.now() / 1000 + 86400,
+      }),
+    ];
+    const health = analyzeCookieHealth(cookies);
+    expect(health.status).toBe("expired");
+    expect(health.jwtIssues.length).toBeGreaterThan(0);
+  });
+
+  it("reports expired when Supabase session.expires_at is past", () => {
+    const pastExp = Math.floor(Date.now() / 1000) - 3600;
+    const cookies = [
+      makeCookie({
+        name: "sb-test-auth-token",
+        value: makeSupabaseCookieValue(pastExp),
+        expires: Date.now() / 1000 + 86400,
+      }),
+    ];
+    const health = analyzeCookieHealth(cookies);
+    expect(health.status).toBe("expired");
+    expect(health.jwtIssues.length).toBeGreaterThan(0);
+    expect(health.jwtIssues[0]).toMatch(/supabase/i);
+  });
+
+  it("warns when >30% session-only cookies", () => {
+    const cookies = [
+      makeCookie({ expires: -1 }),
+      makeCookie({ expires: -1 }),
+      makeCookie({ expires: -1 }),
+      makeCookie({ expires: Date.now() / 1000 + 86400 }),
+    ];
+    const health = analyzeCookieHealth(cookies);
+    expect(health.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/session-only.*state-load/i),
+      ]),
+    );
+  });
+
+  it("warns when zero auth cookies found", () => {
+    const cookies = [makeCookie({ name: "_ga" }), makeCookie({ name: "_fbp" })];
+    const health = analyzeCookieHealth(cookies);
+    expect(health.warnings).toEqual(
+      expect.arrayContaining([expect.stringMatching(/no auth/i)]),
+    );
   });
 });
