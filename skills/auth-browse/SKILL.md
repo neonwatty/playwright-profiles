@@ -1,11 +1,11 @@
 ---
 name: auth-browse
-description: This skill should be used when the user asks to "sign into Cloudflare", "browse Sentry authenticated", "open Supabase dashboard", "log into Vercel", "check auth status", "authenticate to AWS", or any request to browse an external service that requires authentication using playwright-cli. Also triggers on "sign in to <site>", "authenticate to <site>", "open <site> logged in", "browse <service> for me". Complements use-profiles (per-project roles) by providing global persistent auth for external services with bot-detection bypass.
+description: This skill should be used when the user asks to "sign into Cloudflare", "browse Sentry authenticated", "open Supabase dashboard", "log into Vercel", "check auth status", "authenticate to AWS", or any request to browse an external service that requires authentication using playwright-cli. Also triggers on "sign in to <site>", "authenticate to <site>", "open <site> logged in", "browse <service> for me". Complements use-profiles (per-project roles) by providing global persistent auth for external services. Defaults to Chromium; uses real Chrome (`--tier chrome`) only for bot-protected sites.
 ---
 
 # Authenticated Browsing with Playwright CLI
 
-Browse external services (Cloudflare, Sentry, PostHog, Supabase, Vercel, GitHub, AWS, etc.) using `playwright-cli` with persistent authentication that bypasses bot detection.
+Browse external services (Cloudflare, Sentry, PostHog, Supabase, Vercel, GitHub, AWS, etc.) using `playwright-cli` with persistent authentication. Defaults to Playwright's bundled Chromium (works while Chrome is open); use `--tier chrome` for sites with bot detection.
 
 ## How This Differs from use-profiles
 
@@ -87,7 +87,7 @@ If auth is valid, skip to Step 3.
 
 ### Step 2: Sign in (if needed)
 
-The sign-in command is **interactive** — it opens Chrome for manual sign-in. This cannot be run via the Bash tool. Tell the user to run it in a separate terminal:
+The sign-in command is **interactive** — it opens a browser for manual sign-in. This cannot be run via the Bash tool. Tell the user to run it in a separate terminal:
 
 ```
 node ~/.playwright-cli/sign-in.mjs login <site>

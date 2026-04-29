@@ -92,7 +92,9 @@ function loadSites() {
   if (existsSync(SITES_FILE)) {
     try {
       const custom = JSON.parse(readFileSync(SITES_FILE, "utf-8"));
-      Object.assign(sites, custom);
+      for (const [name, cfg] of Object.entries(custom)) {
+        sites[name] = { ...sites[name], ...cfg };
+      }
     } catch (err) {
       console.error(
         `Warning: could not parse ${SITES_FILE}, using defaults: ${err.message}`,
@@ -204,8 +206,10 @@ function checkProfileLock(dir) {
   }
   if (lockExists) {
     console.error(`\n⛔ Profile directory is locked: ${dir}`);
-    console.error("   Another Chrome process is using this profile.");
-    console.error(`   Run: rm "${lockPath}" (if no Chrome process is running)`);
+    console.error("   Another browser process is using this profile.");
+    console.error(
+      `   Run: rm "${lockPath}" (if no browser process is running)`,
+    );
     process.exit(1);
   }
 }
@@ -646,7 +650,7 @@ Options:
                       "chromium" (default) — Playwright's bundled Chromium.
                         Works while your Chrome is open. Best for most sites.
                       "chrome" — real Google Chrome with bot-detection bypass.
-                        Required for Cloudflare, Google OAuth, AWS. Chrome must
+                        Often needed for Cloudflare, Google OAuth, AWS. Chrome must
                         be closed first. Preference is saved per-site.
 
 Sites: ${Object.keys(sites).join(", ")}
@@ -687,8 +691,13 @@ function resolveTier({ cliTier, siteConfig }) {
     }
     return cliTier;
   }
-  if (siteConfig.tier && VALID_TIERS.has(siteConfig.tier)) {
-    return siteConfig.tier;
+  if (siteConfig.tier) {
+    if (VALID_TIERS.has(siteConfig.tier)) {
+      return siteConfig.tier;
+    }
+    console.error(
+      `Warning: invalid tier "${siteConfig.tier}" in site config, falling back to "${DEFAULT_TIER}".`,
+    );
   }
   return DEFAULT_TIER;
 }
@@ -698,7 +707,10 @@ function saveSiteTier(name, tier) {
   if (existsSync(SITES_FILE)) {
     try {
       custom = JSON.parse(readFileSync(SITES_FILE, "utf-8"));
-    } catch {
+    } catch (err) {
+      console.error(
+        `Warning: could not parse ${SITES_FILE}, starting fresh: ${err.message}`,
+      );
       custom = {};
     }
   }
@@ -706,8 +718,14 @@ function saveSiteTier(name, tier) {
     custom[name] = {};
   }
   custom[name].tier = tier;
-  mkdirSync(BASE_DIR, { recursive: true });
-  writeFileSync(SITES_FILE, JSON.stringify(custom, null, 2) + "\n");
+  try {
+    mkdirSync(BASE_DIR, { recursive: true });
+    writeFileSync(SITES_FILE, JSON.stringify(custom, null, 2) + "\n");
+  } catch (err) {
+    console.error(
+      `Warning: could not save tier to ${SITES_FILE}: ${err.message}`,
+    );
+  }
 }
 
 // ── Exports (for testing) ──────────────────────────────────────────
@@ -744,6 +762,12 @@ if (process.argv[1] === __filename) {
         process.exit(1);
       }
       cliTier = rawArgs[++i];
+      if (!VALID_TIERS.has(cliTier)) {
+        console.error(
+          `Error: invalid --tier value "${cliTier}". Must be "chromium" or "chrome".`,
+        );
+        process.exit(1);
+      }
     } else {
       args.push(rawArgs[i]);
     }

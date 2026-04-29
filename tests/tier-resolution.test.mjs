@@ -81,6 +81,8 @@ describe("saveSiteTier (UT-14)", () => {
 
       const sites = loadSites();
       expect(sites["test-tier-site"].tier).toBe("chrome");
+      expect(sites["test-tier-site"].url).toBe("https://example.com");
+      expect(sites["test-tier-site"].waitFor).toBe("/dash");
     } finally {
       if (backup) {
         writeFileSync(SITES_FILE, JSON.stringify(backup, null, 2) + "\n");
