@@ -39,6 +39,7 @@ node ~/.playwright-cli/sign-in.mjs add <name> <login-url> <wait-for-pattern>
 ```
 
 Example:
+
 ```bash
 node ~/.playwright-cli/sign-in.mjs add deckchecker https://deckchecker.app/login /dashboard
 ```
@@ -55,13 +56,26 @@ node ~/.playwright-cli/sign-in.mjs login <name>
 
 This is interactive — Claude cannot run it. The user signs in manually. The script auto-detects completion using the `waitFor` pattern (defaults to the hostname when omitted from `add`). The user can also press Enter at any time to save manually.
 
-After the user confirms sign-in is complete, verify:
+### Step 4: Validate and test
+
+After the user confirms sign-in is complete, validate the captured auth:
 
 ```bash
 node ~/.playwright-cli/sign-in.mjs check <name>
 ```
 
-### Step 4: Test browsing
+Review the output:
+
+- **Status: HEALTHY** — proceed to test browsing.
+- **Status: EXPIRED** — the capture failed or the session expired before saving. Re-run sign-in.
+- **Status: DEGRADED** — check the warnings. Common issues:
+  - "No auth-relevant cookies found" — the app may use httpOnly cookies not captured by storageState, or sign-in wasn't completed before saving.
+  - "N session-only cookies will not survive state-load" — this app needs `--persistent --profile` instead.
+  - Supabase session expires in <2h — normal for Supabase, but the profile will need frequent refresh.
+
+If the app uses Supabase (look for `sb-*-auth-token` in the check output), note the real session TTL. Supabase access tokens typically expire in 1 hour — inform the user that profiles will need refresh before each work session.
+
+Then test browsing:
 
 For the user's own apps (no bot detection), use `state-load` — it injects cookies into the existing headless session without interfering with per-repo session isolation or `cli.config.json` settings:
 
@@ -83,6 +97,7 @@ playwright-cli open <app-url> --headed --browser chrome --persistent --profile ~
 ### Step 5: Confirm and summarize
 
 Tell the user:
+
 - Their app is now registered as `<name>`
 - Future sign-ins: `node ~/.playwright-cli/sign-in.mjs login <name>`
 - To browse authenticated: just ask Claude to "open deckchecker" or "browse seatify"
@@ -160,13 +175,13 @@ node ~/.playwright-cli/sign-in.mjs login seatify-staging-admin --profile seatify
 
 When helping the user determine the `waitFor` pattern, suggest these common patterns:
 
-| Framework / Pattern | Typical post-login URL |
-|---|---|
-| Next.js with dashboard | `/dashboard` |
-| SPA with hash routing | `#/home` or `#/dashboard` |
-| Supabase Auth redirect | `/dashboard` or the `redirectTo` path |
-| OAuth callback | The final redirect after `/auth/callback` |
-| Multi-step onboarding | `/onboarding` or `/setup` |
+| Framework / Pattern    | Typical post-login URL                    |
+| ---------------------- | ----------------------------------------- |
+| Next.js with dashboard | `/dashboard`                              |
+| SPA with hash routing  | `#/home` or `#/dashboard`                 |
+| Supabase Auth redirect | `/dashboard` or the `redirectTo` path     |
+| OAuth callback         | The final redirect after `/auth/callback` |
+| Multi-step onboarding  | `/onboarding` or `/setup`                 |
 
 If unsure, the user can sign in manually (Enter-based) first, then check the browser URL bar to discover the pattern. They can update the site config later with `add` (same name overwrites).
 

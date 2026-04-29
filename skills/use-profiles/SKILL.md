@@ -12,6 +12,7 @@ Load saved Playwright `storageState` authentication profiles before browser auto
 ## When This Applies
 
 This skill applies when ALL of the following are true:
+
 1. The current project has a `.playwright/profiles.json` file
 2. Browser automation work is about to begin (using Playwright MCP tools)
 3. The target page requires authentication
@@ -43,29 +44,44 @@ Determine which profile to use based on conversation context:
 
 ## Loading a Profile
 
-Before navigating to any authenticated page, load the profile:
+Before navigating to any authenticated page, load and validate the profile:
 
 1. Verify the storageState file exists at `.playwright/profiles/<role-name>.json`. If it does not exist, inform the user and suggest running `/setup-profiles` to create it.
 
 2. Read the storageState JSON file. It contains `cookies` and `origins` (localStorage) arrays.
 
-3. Use `browser_run_code` (MCP tool: `mcp__playwright__browser_run_code`) to restore cookies only. Do NOT navigate to the app's origin to set localStorage first — this triggers client-side auth libraries (e.g., Supabase) that may clear the restored cookies.
+3. **Pre-load health check (RT-08):** Before injecting cookies, inspect the cookie health:
+   - For any cookie whose value starts with `base64-` (Supabase auth): decode the base64 payload (`Buffer.from(value.slice(7), 'base64').toString()`), parse the JSON, and check `expires_at`. If `expires_at < Date.now()/1000`, the session is expired.
+   - For any cookie whose value looks like a JWT (three dot-separated base64url segments): decode the middle segment, parse the JSON, and check `exp`. If `exp < Date.now()/1000`, the JWT is expired.
+   - For standard cookies: check the `expires` field. If `expires > 0` and `expires < Date.now()/1000`, the cookie is expired.
+   - Count session-only cookies (`expires <= 0`). If >30% of cookies are session-only, note this.
+
+   Report a summary: "Profile health: N valid, N expired, N session-only."
+
+   **If ALL auth-relevant cookies (names matching `/auth|session|token|sid|jwt|identity|logged/i`) are expired:** Do not load the cookies. Instead, report: "All auth cookies in [role] profile are expired. Run `/setup-profiles` to refresh." Do not waste time loading dead cookies, navigating, and hitting a redirect.
+
+   **If some cookies are valid:** Proceed to load them, but note the warnings.
+
+4. **Cross-contamination check (RT-10):** Check the domains of all cookies in the profile. Extract unique domains. If cookies span more than 3 distinct domains that don't match the `loginUrl` hostname from the profile config, warn: "Profile contains cookies from N unrelated domains — consider recapturing with `/setup-profiles` for a cleaner profile."
+
+5. Use `browser_run_code` (MCP tool: `mcp__playwright__browser_run_code`) to restore cookies only. Do NOT navigate to the app's origin to set localStorage first — this triggers client-side auth libraries (e.g., Supabase) that may clear the restored cookies.
 
    ```javascript
    async (page) => {
      const state = STATE_JSON_HERE;
      await page.context().addCookies(state.cookies);
-     return 'Profile loaded';
-   }
+     return "Profile loaded";
+   };
    ```
 
-4. Navigate directly to the target authenticated page. The cookies will be sent with the request and the app will recognize the session.
+6. Navigate directly to the target authenticated page. The cookies will be sent with the request and the app will recognize the session.
 
 ## Session Expiry Detection
 
 After loading a profile and navigating to the target page, check whether the session is still valid. The primary heuristic: if the browser is redirected to a URL matching the `loginUrl` from the profile config, the session has likely expired.
 
 If expiry is detected:
+
 - Inform the user that the session for the profile appears to have expired
 - Suggest running `/setup-profiles` to refresh it
 - Do not attempt to log in automatically
