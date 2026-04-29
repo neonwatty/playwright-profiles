@@ -36,6 +36,10 @@ import { join, basename } from "path";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
+import {
+  analyzeCookieHealth,
+  filterCookiesByDomain,
+} from "./cookie-analysis.mjs";
 
 // ── Config ──────────────────────────────────────────────────────────
 const BASE_DIR = join(homedir(), ".playwright-cli");
@@ -476,80 +480,51 @@ function checkSite(siteName) {
 }
 
 function printCookieSummary(state, siteName) {
-  const now = Date.now() / 1000;
   const cookies = state.cookies || [];
+  const health = analyzeCookieHealth(cookies);
 
-  if (cookies.length === 0) {
+  if (health.status === "empty") {
     console.log(`  ${siteName}: no cookies saved`);
     return;
   }
 
-  // Skip ephemeral cookies that rotate frequently
-  const EPHEMERAL = new Set([
-    "__cf_bm",
-    "__stripe_sid",
-    "__stripe_mid",
-    "_cfuvid",
-    "cf_clearance",
-    "__cflb",
-  ]);
-
-  const byDomain = {};
-  for (const c of cookies) {
-    const d = c.domain.replace(/^\./, "");
-    if (!byDomain[d]) byDomain[d] = [];
-    byDomain[d].push(c);
-  }
-
+  const c = health.classification;
   console.log(
-    `  ${siteName}: ${cookies.length} cookies across ${Object.keys(byDomain).length} domains`,
+    `  ${siteName}: ${c.total} cookies (${c.valid} valid, ${c.expired} expired, ${c.session_only} session-only, ${c.ephemeral} ephemeral)`,
   );
 
-  // Find soonest-expiring non-session, non-ephemeral cookie
-  const meaningful = cookies
-    .filter((c) => c.expires > 0 && !EPHEMERAL.has(c.name))
-    .sort((a, b) => a.expires - b.expires);
-
-  if (meaningful.length > 0) {
-    const soonest = meaningful[0];
-    const remaining = soonest.expires - now;
-
-    if (remaining <= 0) {
-      console.log(
-        `  ⚠ Soonest cookie "${soonest.name}" expired ${formatDuration(-remaining)} ago`,
-      );
-    } else if (remaining < 3600) {
-      console.log(
-        `  ⚠ Soonest cookie "${soonest.name}" expires in ${formatDuration(remaining)}`,
-      );
-    } else {
-      console.log(
-        `  ✓ Soonest expiry: "${soonest.name}" in ${formatDuration(remaining)}`,
-      );
-    }
+  for (const issue of health.jwtIssues) {
+    console.log(`  ⚠ ${issue}`);
   }
 
-  // Show auth-relevant cookies (subset of meaningful, already sorted)
-  const authCookies = meaningful.filter((c) =>
-    /auth|session|token|sid|jwt|identity|logged/i.test(c.name),
-  );
-  if (authCookies.length > 0) {
-    const authSoonest = authCookies[0];
-    const authRemaining = authSoonest.expires - now;
-    if (authRemaining <= 0) {
+  if (health.soonestAuthExpiry) {
+    const r = health.soonestAuthExpiry.remaining;
+    if (r <= 0) {
       console.log(
-        `  ⚠ Auth cookie "${authSoonest.name}" EXPIRED ${formatDuration(-authRemaining)} ago`,
+        `  ⚠ Auth "${health.soonestAuthExpiry.name}" EXPIRED ${formatDuration(-r)} ago`,
       );
       console.log(`    Re-run: node sign-in.mjs login ${siteName}`);
+    } else if (r < 3600) {
+      console.log(
+        `  ⚠ Auth "${health.soonestAuthExpiry.name}" expires in ${formatDuration(r)}`,
+      );
     } else {
       console.log(
-        `  ✓ Auth cookie "${authSoonest.name}" valid for ${formatDuration(authRemaining)}`,
+        `  ✓ Auth "${health.soonestAuthExpiry.name}" valid for ${formatDuration(r)}`,
       );
     }
+  }
+
+  for (const w of health.warnings) {
+    console.log(`  ℹ ${w}`);
+  }
+
+  if (health.status === "expired") {
+    console.log(`  ❌ Status: EXPIRED — re-authenticate before use`);
+  } else if (health.status === "degraded") {
+    console.log(`  ⚠ Status: DEGRADED — see warnings above`);
   } else {
-    console.log(
-      `  ℹ No expiring auth cookies found (may use session-only or httpOnly cookies)`,
-    );
+    console.log(`  ✓ Status: HEALTHY`);
   }
 }
 
