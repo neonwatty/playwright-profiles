@@ -5,7 +5,7 @@
  *
  * Defaults to Playwright's bundled Chromium (works while Chrome is open).
  * Use --tier chrome for sites with bot detection (Google OAuth, Cloudflare).
- * Auth state accumulates in a Chrome profile at ~/.playwright-cli/.
+ * Auth state accumulates in a browser profile at ~/.playwright-cli/.
  * Use --profile <name> for isolated profiles (multi-user/QA).
  *
  * Usage:
@@ -97,7 +97,7 @@ function loadSites() {
       }
     } catch (err) {
       console.error(
-        `Warning: could not parse ${SITES_FILE}, using defaults: ${err.message}`,
+        `Warning: could not load ${SITES_FILE}, using defaults: ${err.message}`,
       );
     }
   }
@@ -329,7 +329,9 @@ async function performLogin({
 }) {
   console.log(`\n🔐 Signing into: ${siteName} (${url})`);
   if (profileName && profileName !== "default") {
-    console.log(`   Chrome profile: chrome-profile-${profileName}`);
+    console.log(
+      `   ${tier === "chrome" ? "Chrome" : "Browser"} profile: chrome-profile-${profileName}`,
+    );
   }
   console.log(`   Auth will be saved to: ${outFile}\n`);
 
@@ -490,8 +492,10 @@ async function loginUrl(url, profileName, cliTier) {
     process.exit(1);
   }
 
-  const tier = resolveTier({ cliTier, siteConfig: {} });
   const hostname = parsed.hostname.replace(/\./g, "-");
+  const sites = loadSites();
+  const existingSiteConfig = sites[hostname] || {};
+  const tier = resolveTier({ cliTier, siteConfig: existingSiteConfig });
 
   // Persist tier preference when explicitly set via --tier
   if (cliTier) {
@@ -628,7 +632,7 @@ Persistent browser sign-in for external services.
 
 Defaults to Playwright's bundled Chromium (works while Chrome is open).
 Use --tier chrome for sites with bot detection (Google OAuth, Cloudflare).
-Auth state accumulates in a Chrome profile at ~/.playwright-cli/.
+Auth state accumulates in a browser profile at ~/.playwright-cli/.
 
 Usage: node sign-in.mjs <command> [args]
 
@@ -708,10 +712,12 @@ function saveSiteTier(name, tier) {
     try {
       custom = JSON.parse(readFileSync(SITES_FILE, "utf-8"));
     } catch (err) {
+      console.error(`\n⚠ ${SITES_FILE} contains invalid JSON: ${err.message}`);
       console.error(
-        `Warning: could not parse ${SITES_FILE}, starting fresh: ${err.message}`,
+        `  Refusing to overwrite — fix the file manually or delete it to start fresh.`,
       );
-      custom = {};
+      console.error(`  Your --tier preference was NOT saved.`);
+      return;
     }
   }
   if (!custom[name]) {
@@ -723,7 +729,10 @@ function saveSiteTier(name, tier) {
     writeFileSync(SITES_FILE, JSON.stringify(custom, null, 2) + "\n");
   } catch (err) {
     console.error(
-      `Warning: could not save tier to ${SITES_FILE}: ${err.message}`,
+      `\n⚠ Failed to save tier preference to ${SITES_FILE}: ${err.message}`,
+    );
+    console.error(
+      `  Your --tier ${tier} choice will NOT be remembered for future logins.`,
     );
   }
 }
@@ -774,6 +783,10 @@ if (process.argv[1] === __filename) {
   }
 
   const command = args[0] || "help";
+
+  if (cliTier && command !== "login") {
+    console.error(`Warning: --tier is only used with the "login" command.`);
+  }
 
   try {
     switch (command) {

@@ -64,6 +64,78 @@ describe("resolveTier (UT-13)", () => {
 
 const SITES_FILE = join(homedir(), ".playwright-cli", "sites.json");
 
+describe("loadSites merge behavior", () => {
+  it("merges partial custom entry with built-in site, preserving url and waitFor", () => {
+    const backup = existsSync(SITES_FILE)
+      ? readFileSync(SITES_FILE, "utf-8")
+      : null;
+
+    try {
+      // Write only a tier override for a built-in site (no url/waitFor)
+      const custom = { supabase: { tier: "chrome" } };
+      mkdirSync(join(homedir(), ".playwright-cli"), { recursive: true });
+      writeFileSync(SITES_FILE, JSON.stringify(custom, null, 2) + "\n");
+
+      const sites = loadSites();
+      expect(sites.supabase.tier).toBe("chrome");
+      expect(sites.supabase.url).toBeDefined();
+      expect(sites.supabase.waitFor).toBeDefined();
+    } finally {
+      if (backup) {
+        writeFileSync(SITES_FILE, backup);
+      } else if (existsSync(SITES_FILE)) {
+        unlinkSync(SITES_FILE);
+      }
+    }
+  });
+
+  it("lets a custom entry override a built-in site url", () => {
+    const backup = existsSync(SITES_FILE)
+      ? readFileSync(SITES_FILE, "utf-8")
+      : null;
+
+    try {
+      const custom = { github: { url: "https://github.enterprise.com" } };
+      mkdirSync(join(homedir(), ".playwright-cli"), { recursive: true });
+      writeFileSync(SITES_FILE, JSON.stringify(custom, null, 2) + "\n");
+
+      const sites = loadSites();
+      expect(sites.github.url).toBe("https://github.enterprise.com");
+      expect(sites.github.waitFor).toBeDefined();
+    } finally {
+      if (backup) {
+        writeFileSync(SITES_FILE, backup);
+      } else if (existsSync(SITES_FILE)) {
+        unlinkSync(SITES_FILE);
+      }
+    }
+  });
+
+  it("returns a custom-only site with no built-in counterpart", () => {
+    const backup = existsSync(SITES_FILE)
+      ? readFileSync(SITES_FILE, "utf-8")
+      : null;
+
+    try {
+      const custom = {
+        "my-app": { url: "https://my-app.com", waitFor: "/home" },
+      };
+      mkdirSync(join(homedir(), ".playwright-cli"), { recursive: true });
+      writeFileSync(SITES_FILE, JSON.stringify(custom, null, 2) + "\n");
+
+      const sites = loadSites();
+      expect(sites["my-app"].url).toBe("https://my-app.com");
+      expect(sites["my-app"].waitFor).toBe("/home");
+    } finally {
+      if (backup) {
+        writeFileSync(SITES_FILE, backup);
+      } else if (existsSync(SITES_FILE)) {
+        unlinkSync(SITES_FILE);
+      }
+    }
+  });
+});
+
 describe("saveSiteTier (UT-14)", () => {
   it("writes tier to sites.json for an existing custom site", () => {
     const backup = existsSync(SITES_FILE)
@@ -79,10 +151,15 @@ describe("saveSiteTier (UT-14)", () => {
 
       saveSiteTier("test-tier-site", "chrome");
 
+      // Verify raw JSON preserves existing fields (not masked by loadSites merge)
+      const raw = JSON.parse(readFileSync(SITES_FILE, "utf-8"));
+      expect(raw["test-tier-site"].tier).toBe("chrome");
+      expect(raw["test-tier-site"].url).toBe("https://example.com");
+      expect(raw["test-tier-site"].waitFor).toBe("/dash");
+
+      // Also verify via loadSites for the full roundtrip
       const sites = loadSites();
       expect(sites["test-tier-site"].tier).toBe("chrome");
-      expect(sites["test-tier-site"].url).toBe("https://example.com");
-      expect(sites["test-tier-site"].waitFor).toBe("/dash");
     } finally {
       if (backup) {
         writeFileSync(SITES_FILE, JSON.stringify(backup, null, 2) + "\n");
@@ -109,6 +186,35 @@ describe("saveSiteTier (UT-14)", () => {
     } finally {
       if (backup) {
         writeFileSync(SITES_FILE, JSON.stringify(backup, null, 2) + "\n");
+      } else if (existsSync(SITES_FILE)) {
+        unlinkSync(SITES_FILE);
+      }
+    }
+  });
+
+  it("refuses to overwrite corrupted sites.json", () => {
+    const backup = existsSync(SITES_FILE)
+      ? readFileSync(SITES_FILE, "utf-8")
+      : null;
+
+    try {
+      const original = {
+        "my-app": { url: "https://my-app.com", waitFor: "/home" },
+      };
+      mkdirSync(join(homedir(), ".playwright-cli"), { recursive: true });
+      writeFileSync(SITES_FILE, JSON.stringify(original, null, 2) + "\n");
+
+      // Corrupt the file
+      writeFileSync(SITES_FILE, "{ invalid json }}}");
+
+      saveSiteTier("my-app", "chrome");
+
+      // File should still be corrupted — saveSiteTier must not overwrite
+      const raw = readFileSync(SITES_FILE, "utf-8");
+      expect(raw).toBe("{ invalid json }}}");
+    } finally {
+      if (backup) {
+        writeFileSync(SITES_FILE, backup);
       } else if (existsSync(SITES_FILE)) {
         unlinkSync(SITES_FILE);
       }

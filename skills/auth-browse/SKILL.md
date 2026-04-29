@@ -10,7 +10,7 @@ Browse external services (Cloudflare, Sentry, PostHog, Supabase, Vercel, GitHub,
 ## How This Differs from use-profiles
 
 - **use-profiles**: Per-project, role-based auth (admin/user/speaker) for the project's own app, using Playwright MCP
-- **auth-browse**: Global, service-based auth for external dashboards (Cloudflare, Sentry, etc.) using `playwright-cli` with real Chrome to bypass bot detection
+- **auth-browse**: Global, service-based auth for external dashboards (Cloudflare, Sentry, etc.) using `playwright-cli` with persistent authentication. Defaults to Chromium; uses real Chrome for bot-protected sites
 
 Both skills can coexist. Use `use-profiles` for testing your app with different roles. Use `auth-browse` for browsing third-party services.
 
@@ -109,7 +109,7 @@ For arbitrary URLs without adding a shortcut: `node ~/.playwright-cli/sign-in.mj
 
 Choose the right tier based on the target site:
 
-**Tier 1: `state-load` (most sites — GitHub, Vercel, Netlify, Railway, Render, Sentry, PostHog, Supabase):**
+**Tier 1: `state-load` (default for most sites):**
 
 Injects cookies into the existing headless session. Non-interfering — respects `cli.config.json` and per-repo session isolation.
 
@@ -119,7 +119,7 @@ playwright-cli state-load ~/.playwright-cli/auth-<site>.json
 playwright-cli reload
 ```
 
-**Tier 2: `--persistent --profile` (bot-protected sites — Cloudflare, Google, AWS):**
+**Tier 2: `--persistent --profile` (when state-load fails due to bot detection):**
 
 Uses real Chrome with persistent profile. Overrides session isolation and requires headed mode, but bypasses bot detection.
 
