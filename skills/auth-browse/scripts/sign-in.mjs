@@ -362,6 +362,21 @@ async function performLogin({
     await bail();
   }
 
+  // Filter cookies to only the target domain (removes cross-contamination)
+  try {
+    const rawState = JSON.parse(readFileSync(outFile, "utf-8"));
+    const originalCount = rawState.cookies.length;
+    rawState.cookies = filterCookiesByDomain(rawState.cookies, url);
+    if (rawState.cookies.length < originalCount) {
+      console.log(
+        `  Filtered cookies: ${originalCount} → ${rawState.cookies.length} (removed ${originalCount - rawState.cookies.length} unrelated domains)`,
+      );
+    }
+    writeFileSync(outFile, JSON.stringify(rawState, null, 2) + "\n");
+  } catch (err) {
+    console.error(`Warning: could not filter cookies: ${err.message}`);
+  }
+
   console.log(`Auth state saved to ${outFile}`);
 
   try {
