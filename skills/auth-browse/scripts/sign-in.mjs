@@ -25,24 +25,32 @@
  * (e.g., '/dashboard', '/organizations') to avoid false auto-detect.
  */
 
-import { chromium } from 'playwright';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
-import { join, basename } from 'path';
-import { homedir } from 'os';
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+} from "fs";
+import { join, basename } from "path";
+import { homedir } from "os";
+import { fileURLToPath } from "url";
 
 // ── Config ──────────────────────────────────────────────────────────
-const BASE_DIR = join(homedir(), '.playwright-cli');
-const PROFILE_DIR = join(BASE_DIR, 'chrome-profile');
-const SITES_FILE = join(BASE_DIR, 'sites.json');
+const BASE_DIR = join(homedir(), ".playwright-cli");
+const PROFILE_DIR = join(BASE_DIR, "chrome-profile");
+const SITES_FILE = join(BASE_DIR, "sites.json");
 
 // Default Chrome path per platform
 const CHROME_PATHS = {
-  darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  linux: '/usr/bin/google-chrome',
-  win32: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  darwin: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  linux: "/usr/bin/google-chrome",
+  win32: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
 };
 if (!(process.platform in CHROME_PATHS)) {
-  console.error(`Warning: unsupported platform "${process.platform}", defaulting to macOS Chrome path.`);
+  console.error(
+    `Warning: unsupported platform "${process.platform}", defaulting to macOS Chrome path.`,
+  );
 }
 const CHROME_PATH = CHROME_PATHS[process.platform] || CHROME_PATHS.darwin;
 
@@ -50,26 +58,34 @@ const CHROME_PATH = CHROME_PATHS[process.platform] || CHROME_PATHS.darwin;
 
 // Built-in site shortcuts. waitFor patterns must NOT match the login URL.
 const DEFAULT_SITES = {
-  github:     { url: 'https://github.com/login',              waitFor: 'github.com/dashboard' },
-  cloudflare: { url: 'https://dash.cloudflare.com/',           waitFor: 'dash.cloudflare.com/home' },
-  vercel:     { url: 'https://vercel.com/login',               waitFor: 'vercel.com/~' },
-  sentry:     { url: 'https://sentry.io/auth/login/',          waitFor: 'sentry.io/organizations' },
-  posthog:    { url: 'https://us.posthog.com/',                 waitFor: '/project' },
-  supabase:   { url: 'https://supabase.com/dashboard',          waitFor: '/projects' },
-  aws:        { url: 'https://console.aws.amazon.com/',         waitFor: 'console/home' },
-  netlify:    { url: 'https://app.netlify.com/',                waitFor: '/sites' },
-  railway:    { url: 'https://railway.com/login',               waitFor: 'railway.com/project' },
-  render:     { url: 'https://dashboard.render.com/',            waitFor: '/services' },
+  github: { url: "https://github.com/login", waitFor: "github.com/dashboard" },
+  cloudflare: {
+    url: "https://dash.cloudflare.com/",
+    waitFor: "dash.cloudflare.com/home",
+  },
+  vercel: { url: "https://vercel.com/login", waitFor: "vercel.com/~" },
+  sentry: {
+    url: "https://sentry.io/auth/login/",
+    waitFor: "sentry.io/organizations",
+  },
+  posthog: { url: "https://us.posthog.com/", waitFor: "/project" },
+  supabase: { url: "https://supabase.com/dashboard", waitFor: "/projects" },
+  aws: { url: "https://console.aws.amazon.com/", waitFor: "console/home" },
+  netlify: { url: "https://app.netlify.com/", waitFor: "/sites" },
+  railway: { url: "https://railway.com/login", waitFor: "railway.com/project" },
+  render: { url: "https://dashboard.render.com/", waitFor: "/services" },
 };
 
 function loadSites() {
   const sites = { ...DEFAULT_SITES };
   if (existsSync(SITES_FILE)) {
     try {
-      const custom = JSON.parse(readFileSync(SITES_FILE, 'utf-8'));
+      const custom = JSON.parse(readFileSync(SITES_FILE, "utf-8"));
       Object.assign(sites, custom);
     } catch (err) {
-      console.error(`Warning: could not parse ${SITES_FILE}, using defaults: ${err.message}`);
+      console.error(
+        `Warning: could not parse ${SITES_FILE}, using defaults: ${err.message}`,
+      );
     }
   }
   return sites;
@@ -77,13 +93,14 @@ function loadSites() {
 
 function validateName(value, label) {
   if (!/^[a-zA-Z0-9_-]+$/.test(value)) {
-    console.error(`Invalid ${label} "${value}". Use only letters, numbers, hyphens, and underscores.`);
-    process.exit(1);
+    throw new Error(
+      `Invalid ${label} "${value}". Use only letters, numbers, hyphens, and underscores.`,
+    );
   }
 }
 
 function saveSite(name, url, waitFor) {
-  validateName(name, 'site name');
+  validateName(name, "site name");
 
   let parsed;
   try {
@@ -96,16 +113,18 @@ function saveSite(name, url, waitFor) {
   let custom = {};
   if (existsSync(SITES_FILE)) {
     try {
-      custom = JSON.parse(readFileSync(SITES_FILE, 'utf-8'));
+      custom = JSON.parse(readFileSync(SITES_FILE, "utf-8"));
     } catch (err) {
-      console.error(`Warning: could not parse ${SITES_FILE}, starting fresh: ${err.message}`);
+      console.error(
+        `Warning: could not parse ${SITES_FILE}, starting fresh: ${err.message}`,
+      );
       custom = {};
     }
   }
   custom[name] = { url, waitFor: waitFor || parsed.hostname };
   mkdirSync(BASE_DIR, { recursive: true });
   try {
-    writeFileSync(SITES_FILE, JSON.stringify(custom, null, 2) + '\n');
+    writeFileSync(SITES_FILE, JSON.stringify(custom, null, 2) + "\n");
   } catch (err) {
     console.error(`Failed to write ${SITES_FILE}: ${err.message}`);
     process.exit(1);
@@ -113,27 +132,28 @@ function saveSite(name, url, waitFor) {
 }
 
 function authFile(site) {
-  const safe = site.replace(/[^a-zA-Z0-9_-]/g, '-');
+  const safe = site.replace(/[^a-zA-Z0-9_-]/g, "-");
   return join(BASE_DIR, `auth-${safe}.json`);
 }
 
 // ── Profile management ──────────────────────────────────────────────
 
 function profileDir(profileName) {
-  if (!profileName || profileName === 'default') return PROFILE_DIR;
-  validateName(profileName, 'profile name');
+  if (!profileName || profileName === "default") return PROFILE_DIR;
+  validateName(profileName, "profile name");
   return join(BASE_DIR, `chrome-profile-${profileName}`);
 }
 
 // ── Shared browser launch ───────────────────────────────────────────
 
 async function launchBrowser(profileName) {
+  const { chromium } = await import("playwright");
   const dir = profileDir(profileName);
   mkdirSync(dir, { recursive: true });
 
   if (!existsSync(CHROME_PATH)) {
     console.error(`Chrome not found at: ${CHROME_PATH}`);
-    console.error('Install Google Chrome or edit CHROME_PATHS in this script.');
+    console.error("Install Google Chrome or edit CHROME_PATHS in this script.");
     process.exit(1);
   }
 
@@ -141,12 +161,17 @@ async function launchBrowser(profileName) {
     return await chromium.launchPersistentContext(dir, {
       executablePath: CHROME_PATH,
       headless: false,
-      ignoreDefaultArgs: ['--enable-automation'],
-      args: ['--disable-blink-features=AutomationControlled'],
+      ignoreDefaultArgs: ["--enable-automation"],
+      args: ["--disable-blink-features=AutomationControlled"],
     });
   } catch (err) {
-    if (err.message.includes('existing browser session') || err.message.includes('Target page, context or browser has been closed')) {
-      console.error(`Chrome is already running with profile "${profileName || 'default'}".`);
+    if (
+      err.message.includes("existing browser session") ||
+      err.message.includes("Target page, context or browser has been closed")
+    ) {
+      console.error(
+        `Chrome is already running with profile "${profileName || "default"}".`,
+      );
       console.error(`Close it or run: kill $(pgrep -f "${basename(dir)}")`);
     } else {
       console.error(`Failed to launch Chrome: ${err.message}`);
@@ -157,7 +182,12 @@ async function launchBrowser(profileName) {
 
 // ── Auto-detect sign-in completion ──────────────────────────────────
 
-async function waitForSignIn(page, waitForPattern, startUrl, timeoutMs = 120_000) {
+async function waitForSignIn(
+  page,
+  waitForPattern,
+  startUrl,
+  timeoutMs = 120_000,
+) {
   let stdinHandler;
 
   const result = await Promise.race([
@@ -169,30 +199,30 @@ async function waitForSignIn(page, waitForPattern, startUrl, timeoutMs = 120_000
         try {
           url = page.url();
         } catch {
-          return 'closed';
+          return "closed";
         }
         // Only match after navigating away from the starting URL
         if (url !== startUrl && url.includes(waitForPattern)) {
           // Small delay to let cookies settle after redirect
-          await new Promise(r => setTimeout(r, 2000));
-          return 'auto';
+          await new Promise((r) => setTimeout(r, 2000));
+          return "auto";
         }
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 500));
       }
-      return 'timeout';
+      return "timeout";
     })(),
     // Manual: user presses Enter
     new Promise((resolve) => {
-      stdinHandler = () => resolve('manual');
-      process.stdin.on('data', stdinHandler);
+      stdinHandler = () => resolve("manual");
+      process.stdin.on("data", stdinHandler);
     }),
   ]);
 
   // Clean up stdin listener from the losing branch
   if (stdinHandler) {
-    process.stdin.removeListener('data', stdinHandler);
+    process.stdin.removeListener("data", stdinHandler);
   }
-  if (result !== 'manual') {
+  if (result !== "manual") {
     process.stdin.unref();
   }
 
@@ -201,19 +231,27 @@ async function waitForSignIn(page, waitForPattern, startUrl, timeoutMs = 120_000
 
 // ── Shared login logic ──────────────────────────────────────────────
 
-async function performLogin({ url, outFile, siteName, waitForPattern, profileName }) {
+async function performLogin({
+  url,
+  outFile,
+  siteName,
+  waitForPattern,
+  profileName,
+}) {
   console.log(`\n🔐 Signing into: ${siteName} (${url})`);
-  if (profileName && profileName !== 'default') {
+  if (profileName && profileName !== "default") {
     console.log(`   Chrome profile: chrome-profile-${profileName}`);
   }
   console.log(`   Auth will be saved to: ${outFile}\n`);
 
   const context = await launchBrowser(profileName);
-  const profileHint = profileName ? `chrome-profile-${profileName}` : 'chrome-profile';
+  const profileHint = profileName
+    ? `chrome-profile-${profileName}`
+    : "chrome-profile";
 
   // Ensure cleanup on Ctrl+C
   const cleanup = async () => {
-    console.log('\nInterrupted — closing browser...');
+    console.log("\nInterrupted — closing browser...");
     try {
       await context.close();
     } catch (err) {
@@ -222,21 +260,21 @@ async function performLogin({ url, outFile, siteName, waitForPattern, profileNam
     }
     process.exit(130);
   };
-  process.on('SIGINT', cleanup);
-  process.on('SIGTERM', cleanup);
+  process.on("SIGINT", cleanup);
+  process.on("SIGTERM", cleanup);
 
   // Helper to clean up and exit on error
   const bail = async (code = 1) => {
-    process.removeListener('SIGINT', cleanup);
-    process.removeListener('SIGTERM', cleanup);
+    process.removeListener("SIGINT", cleanup);
+    process.removeListener("SIGTERM", cleanup);
     await context.close().catch(() => {});
     process.exit(code);
   };
 
-  const page = context.pages()[0] || await context.newPage();
+  const page = context.pages()[0] || (await context.newPage());
 
   try {
-    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    await page.goto(url, { waitUntil: "domcontentloaded" });
   } catch (err) {
     console.error(`Failed to navigate to ${url}: ${err.message}`);
     await bail();
@@ -245,30 +283,32 @@ async function performLogin({ url, outFile, siteName, waitForPattern, profileNam
   const startUrl = page.url();
 
   if (waitForPattern) {
-    console.log('Sign in using the browser window.');
-    console.log('Auth state will save automatically when sign-in is detected.');
-    console.log('Or press Enter manually to save at any time.\n');
+    console.log("Sign in using the browser window.");
+    console.log("Auth state will save automatically when sign-in is detected.");
+    console.log("Or press Enter manually to save at any time.\n");
 
     const result = await waitForSignIn(page, waitForPattern, startUrl);
 
-    if (result === 'closed') {
-      console.log('Browser was closed. No auth state saved.');
+    if (result === "closed") {
+      console.log("Browser was closed. No auth state saved.");
       await bail();
-    } else if (result === 'timeout') {
-      console.log('⚠ Timed out waiting for sign-in. Saving current state anyway.');
-    } else if (result === 'auto') {
-      console.log('✓ Sign-in detected automatically.');
+    } else if (result === "timeout") {
+      console.log(
+        "⚠ Timed out waiting for sign-in. Saving current state anyway.",
+      );
+    } else if (result === "auto") {
+      console.log("✓ Sign-in detected automatically.");
     } else {
-      console.log('✓ Manual save triggered.');
+      console.log("✓ Manual save triggered.");
     }
   } else {
-    console.log('Sign in using the browser window.');
-    console.log('Press Enter here to save auth state.\n');
+    console.log("Sign in using the browser window.");
+    console.log("Press Enter here to save auth state.\n");
 
     await new Promise((resolve) => {
-      process.stdin.once('data', resolve);
+      process.stdin.once("data", resolve);
     });
-    console.log('✓ Manual save triggered.');
+    console.log("✓ Manual save triggered.");
   }
 
   try {
@@ -281,14 +321,16 @@ async function performLogin({ url, outFile, siteName, waitForPattern, profileNam
   console.log(`Auth state saved to ${outFile}`);
 
   try {
-    const state = JSON.parse(readFileSync(outFile, 'utf-8'));
+    const state = JSON.parse(readFileSync(outFile, "utf-8"));
     printCookieSummary(state, siteName);
   } catch {
-    console.error('Warning: could not read saved auth for summary (auth was saved successfully).');
+    console.error(
+      "Warning: could not read saved auth for summary (auth was saved successfully).",
+    );
   }
 
-  process.removeListener('SIGINT', cleanup);
-  process.removeListener('SIGTERM', cleanup);
+  process.removeListener("SIGINT", cleanup);
+  process.removeListener("SIGTERM", cleanup);
   await context.close().catch(() => {});
   process.exit(0);
 }
@@ -300,7 +342,7 @@ async function login(siteName, profileName) {
   const site = sites[siteName];
   if (!site) {
     console.error(`Unknown site: ${siteName}`);
-    console.error(`Available: ${Object.keys(sites).join(', ')}, or pass a URL`);
+    console.error(`Available: ${Object.keys(sites).join(", ")}, or pass a URL`);
     process.exit(1);
   }
 
@@ -322,7 +364,7 @@ async function loginUrl(url, profileName) {
     process.exit(1);
   }
 
-  const hostname = parsed.hostname.replace(/\./g, '-');
+  const hostname = parsed.hostname.replace(/\./g, "-");
   await performLogin({
     url,
     outFile: authFile(hostname),
@@ -350,26 +392,30 @@ function check(siteName) {
       found = true;
       checked.add(basename(file));
       checkSite(site);
-      console.log('');
+      console.log("");
     }
   }
 
   // Discover auth-*.json files not covered by known sites
   if (existsSync(BASE_DIR)) {
     for (const file of readdirSync(BASE_DIR)) {
-      if (file.startsWith('auth-') && file.endsWith('.json') && !checked.has(file)) {
+      if (
+        file.startsWith("auth-") &&
+        file.endsWith(".json") &&
+        !checked.has(file)
+      ) {
         found = true;
-        const name = file.replace(/^auth-/, '').replace(/\.json$/, '');
+        const name = file.replace(/^auth-/, "").replace(/\.json$/, "");
         checkSite(name);
-        console.log('');
+        console.log("");
       }
     }
   }
 
   if (!found) {
-    console.log('No saved auth states found.');
-    console.log('Run: node sign-in.mjs login <site>');
-    console.log(`Available: ${Object.keys(sites).join(', ')}`);
+    console.log("No saved auth states found.");
+    console.log("Run: node sign-in.mjs login <site>");
+    console.log(`Available: ${Object.keys(sites).join(", ")}`);
   }
 }
 
@@ -382,7 +428,7 @@ function checkSite(siteName) {
   }
 
   try {
-    const state = JSON.parse(readFileSync(file, 'utf-8'));
+    const state = JSON.parse(readFileSync(file, "utf-8"));
     printCookieSummary(state, siteName);
   } catch (err) {
     console.log(`  ${siteName}: corrupted auth file (${err.message})`);
@@ -400,22 +446,28 @@ function printCookieSummary(state, siteName) {
 
   // Skip ephemeral cookies that rotate frequently
   const EPHEMERAL = new Set([
-    '__cf_bm', '__stripe_sid', '__stripe_mid', '_cfuvid',
-    'cf_clearance', '__cflb',
+    "__cf_bm",
+    "__stripe_sid",
+    "__stripe_mid",
+    "_cfuvid",
+    "cf_clearance",
+    "__cflb",
   ]);
 
   const byDomain = {};
   for (const c of cookies) {
-    const d = c.domain.replace(/^\./, '');
+    const d = c.domain.replace(/^\./, "");
     if (!byDomain[d]) byDomain[d] = [];
     byDomain[d].push(c);
   }
 
-  console.log(`  ${siteName}: ${cookies.length} cookies across ${Object.keys(byDomain).length} domains`);
+  console.log(
+    `  ${siteName}: ${cookies.length} cookies across ${Object.keys(byDomain).length} domains`,
+  );
 
   // Find soonest-expiring non-session, non-ephemeral cookie
   const meaningful = cookies
-    .filter(c => c.expires > 0 && !EPHEMERAL.has(c.name))
+    .filter((c) => c.expires > 0 && !EPHEMERAL.has(c.name))
     .sort((a, b) => a.expires - b.expires);
 
   if (meaningful.length > 0) {
@@ -423,29 +475,41 @@ function printCookieSummary(state, siteName) {
     const remaining = soonest.expires - now;
 
     if (remaining <= 0) {
-      console.log(`  ⚠ Soonest cookie "${soonest.name}" expired ${formatDuration(-remaining)} ago`);
+      console.log(
+        `  ⚠ Soonest cookie "${soonest.name}" expired ${formatDuration(-remaining)} ago`,
+      );
     } else if (remaining < 3600) {
-      console.log(`  ⚠ Soonest cookie "${soonest.name}" expires in ${formatDuration(remaining)}`);
+      console.log(
+        `  ⚠ Soonest cookie "${soonest.name}" expires in ${formatDuration(remaining)}`,
+      );
     } else {
-      console.log(`  ✓ Soonest expiry: "${soonest.name}" in ${formatDuration(remaining)}`);
+      console.log(
+        `  ✓ Soonest expiry: "${soonest.name}" in ${formatDuration(remaining)}`,
+      );
     }
   }
 
   // Show auth-relevant cookies (subset of meaningful, already sorted)
-  const authCookies = meaningful.filter(c =>
-    /auth|session|token|sid|jwt|identity|logged/i.test(c.name)
+  const authCookies = meaningful.filter((c) =>
+    /auth|session|token|sid|jwt|identity|logged/i.test(c.name),
   );
   if (authCookies.length > 0) {
     const authSoonest = authCookies[0];
     const authRemaining = authSoonest.expires - now;
     if (authRemaining <= 0) {
-      console.log(`  ⚠ Auth cookie "${authSoonest.name}" EXPIRED ${formatDuration(-authRemaining)} ago`);
+      console.log(
+        `  ⚠ Auth cookie "${authSoonest.name}" EXPIRED ${formatDuration(-authRemaining)} ago`,
+      );
       console.log(`    Re-run: node sign-in.mjs login ${siteName}`);
     } else {
-      console.log(`  ✓ Auth cookie "${authSoonest.name}" valid for ${formatDuration(authRemaining)}`);
+      console.log(
+        `  ✓ Auth cookie "${authSoonest.name}" valid for ${formatDuration(authRemaining)}`,
+      );
     }
   } else {
-    console.log(`  ℹ No expiring auth cookies found (may use session-only or httpOnly cookies)`);
+    console.log(
+      `  ℹ No expiring auth cookies found (may use session-only or httpOnly cookies)`,
+    );
   }
 }
 
@@ -481,7 +545,7 @@ Options:
                       (e.g., admin vs planner on the same app).
                       Without this flag, uses the shared default profile.
 
-Sites: ${Object.keys(sites).join(', ')}
+Sites: ${Object.keys(sites).join(", ")}
 
 Examples:
   node sign-in.mjs login cloudflare
@@ -505,68 +569,77 @@ Profile & auth files: ~/.playwright-cli/
 `);
 }
 
-// ── CLI parsing ─────────────────────────────────────────────────────
-const rawArgs = process.argv.slice(2);
+// ── Exports (for testing) ──────────────────────────────────────────
+export { profileDir, authFile, loadSites, validateName, formatDuration };
 
-// Extract --profile <name> from anywhere in the args
-let cliProfile;
-const args = [];
-for (let i = 0; i < rawArgs.length; i++) {
-  if (rawArgs[i] === '--profile') {
-    if (i + 1 >= rawArgs.length) {
-      console.error('Error: --profile requires a name argument.');
-      process.exit(1);
-    }
-    cliProfile = rawArgs[++i];
-  } else {
-    args.push(rawArgs[i]);
-  }
-}
+// ── CLI entrypoint ─────────────────────────────────────────────────
+const __filename = fileURLToPath(import.meta.url);
 
-const command = args[0] || 'help';
+if (process.argv[1] === __filename) {
+  const rawArgs = process.argv.slice(2);
 
-try {
-  switch (command) {
-    case 'login': {
-      const target = args[1];
-      if (!target) {
-        console.error('Usage: sign-in.mjs login <site|url> [--profile <name>]');
+  // Extract --profile <name> from anywhere in the args
+  let cliProfile;
+  const args = [];
+  for (let i = 0; i < rawArgs.length; i++) {
+    if (rawArgs[i] === "--profile") {
+      if (i + 1 >= rawArgs.length) {
+        console.error("Error: --profile requires a name argument.");
         process.exit(1);
       }
-      if (target.startsWith('http')) {
-        await loginUrl(target, cliProfile);
-      } else {
-        await login(target, cliProfile);
-      }
-      break;
+      cliProfile = rawArgs[++i];
+    } else {
+      args.push(rawArgs[i]);
     }
-    case 'check':
-      check(args[1]);
-      break;
-    case 'list': {
-      const sites = loadSites();
-      console.log('Available sites:');
-      for (const [name, site] of Object.entries(sites)) {
-        console.log(`  ${name.padEnd(15)} ${site.url}`);
-      }
-      break;
-    }
-    case 'add': {
-      const [, name, url, waitFor] = args;
-      if (!name || !url) {
-        console.error('Usage: sign-in.mjs add <name> <url> [waitFor]');
-        process.exit(1);
-      }
-      saveSite(name, url, waitFor);
-      console.log(`Added site shortcut: ${name} → ${url}`);
-      break;
-    }
-    case 'help':
-    default:
-      printHelp();
-      break;
   }
-} catch (err) {
-  console.error(`Fatal error: ${err.message}`);
-  process.exit(1);
+
+  const command = args[0] || "help";
+
+  try {
+    switch (command) {
+      case "login": {
+        const target = args[1];
+        if (!target) {
+          console.error(
+            "Usage: sign-in.mjs login <site|url> [--profile <name>]",
+          );
+          process.exit(1);
+        }
+        if (target.startsWith("http")) {
+          await loginUrl(target, cliProfile);
+        } else {
+          await login(target, cliProfile);
+        }
+        break;
+      }
+      case "check":
+        check(args[1]);
+        break;
+      case "list": {
+        const sites = loadSites();
+        console.log("Available sites:");
+        for (const [name, site] of Object.entries(sites)) {
+          console.log(`  ${name.padEnd(15)} ${site.url}`);
+        }
+        break;
+      }
+      case "add": {
+        const [, name, url, waitFor] = args;
+        if (!name || !url) {
+          console.error("Usage: sign-in.mjs add <name> <url> [waitFor]");
+          process.exit(1);
+        }
+        saveSite(name, url, waitFor);
+        console.log(`Added site shortcut: ${name} → ${url}`);
+        break;
+      }
+      case "help":
+      default:
+        printHelp();
+        break;
+    }
+  } catch (err) {
+    console.error(`Fatal error: ${err.message}`);
+    process.exit(1);
+  }
 }
