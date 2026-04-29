@@ -6,6 +6,7 @@ import {
   isAuthCookie,
   classifyCookies,
   EPHEMERAL,
+  filterCookiesByDomain,
 } from "../skills/auth-browse/scripts/cookie-analysis.mjs";
 
 describe("decodeSupabaseCookie (UT-01)", () => {
@@ -195,5 +196,63 @@ describe("EPHEMERAL set (UT-05)", () => {
     expect(result.ephemeral).toBe(1);
     expect(result.valid).toBe(1);
     expect(result.expired).toBe(0);
+  });
+});
+
+describe("filterCookiesByDomain (UT-11)", () => {
+  it("keeps only localhost cookies for localhost target", () => {
+    const cookies = [
+      makeCookie({ domain: "localhost" }),
+      makeCookie({ domain: ".github.com" }),
+      makeCookie({ domain: ".google.com" }),
+      makeCookie({ domain: ".stripe.com" }),
+    ];
+    const filtered = filterCookiesByDomain(cookies, "http://localhost:3000");
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].domain).toBe("localhost");
+  });
+
+  it("keeps parent domain cookies for subdomain targets", () => {
+    const cookies = [
+      makeCookie({ domain: ".cloudflare.com" }),
+      makeCookie({ domain: "dash.cloudflare.com" }),
+      makeCookie({ domain: ".github.com" }),
+    ];
+    const filtered = filterCookiesByDomain(
+      cookies,
+      "https://dash.cloudflare.com",
+    );
+    expect(filtered).toHaveLength(2);
+    expect(filtered.every((c) => c.domain.includes("cloudflare"))).toBe(true);
+  });
+
+  it("keeps OAuth provider cookies for non-localhost targets", () => {
+    const cookies = [
+      makeCookie({ domain: ".cloudflare.com" }),
+      makeCookie({ domain: "accounts.google.com" }),
+      makeCookie({ domain: ".stripe.com" }),
+    ];
+    const filtered = filterCookiesByDomain(
+      cookies,
+      "https://dash.cloudflare.com",
+    );
+    expect(filtered).toHaveLength(2);
+    expect(filtered.some((c) => c.domain === "accounts.google.com")).toBe(true);
+  });
+
+  it("does not keep OAuth cookies for localhost targets", () => {
+    const cookies = [
+      makeCookie({ domain: "localhost" }),
+      makeCookie({ domain: "accounts.google.com" }),
+    ];
+    const filtered = filterCookiesByDomain(cookies, "http://localhost:3000");
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].domain).toBe("localhost");
+  });
+
+  it("returns all cookies for invalid URLs", () => {
+    const cookies = [makeCookie(), makeCookie()];
+    const filtered = filterCookiesByDomain(cookies, "not-a-url");
+    expect(filtered).toHaveLength(2);
   });
 });

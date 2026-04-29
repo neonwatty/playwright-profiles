@@ -112,3 +112,33 @@ export function classifyCookies(cookies) {
 
   return result;
 }
+
+/** OAuth provider domains to always keep for non-localhost targets. */
+const OAUTH_DOMAINS = ["accounts.google.com", "google.com"];
+
+/**
+ * Filter cookies to only those relevant to the target URL.
+ * Keeps cookies matching the target's domain (including parent domains)
+ * and common OAuth providers (for non-localhost targets).
+ */
+export function filterCookiesByDomain(cookies, targetUrl) {
+  let targetHost;
+  try {
+    targetHost = new URL(targetUrl).hostname;
+  } catch {
+    return cookies;
+  }
+
+  const isLocalhost = targetHost === "localhost" || targetHost === "127.0.0.1";
+
+  return cookies.filter((c) => {
+    const cd = c.domain.replace(/^\./, "");
+    if (targetHost === cd || targetHost.endsWith("." + cd)) return true;
+    if (
+      !isLocalhost &&
+      OAUTH_DOMAINS.some((d) => cd === d || cd.endsWith("." + d))
+    )
+      return true;
+    return false;
+  });
+}
