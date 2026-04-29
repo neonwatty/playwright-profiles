@@ -678,8 +678,9 @@ const __filename = fileURLToPath(import.meta.url);
 if (process.argv[1] === __filename) {
   const rawArgs = process.argv.slice(2);
 
-  // Extract --profile <name> from anywhere in the args
+  // Extract --profile <name> and --tier <chrome|chromium> from anywhere in the args
   let cliProfile;
+  let cliTier;
   const args = [];
   for (let i = 0; i < rawArgs.length; i++) {
     if (rawArgs[i] === "--profile") {
@@ -688,6 +689,12 @@ if (process.argv[1] === __filename) {
         process.exit(1);
       }
       cliProfile = rawArgs[++i];
+    } else if (rawArgs[i] === "--tier") {
+      if (i + 1 >= rawArgs.length) {
+        console.error("Error: --tier requires a value (chromium or chrome).");
+        process.exit(1);
+      }
+      cliTier = rawArgs[++i];
     } else {
       args.push(rawArgs[i]);
     }
@@ -701,14 +708,14 @@ if (process.argv[1] === __filename) {
         const target = args[1];
         if (!target) {
           console.error(
-            "Usage: sign-in.mjs login <site|url> [--profile <name>]",
+            "Usage: sign-in.mjs login <site|url> [--profile <name>] [--tier chromium|chrome]",
           );
           process.exit(1);
         }
         if (target.startsWith("http")) {
-          await loginUrl(target, cliProfile);
+          await loginUrl(target, cliProfile, cliTier);
         } else {
-          await login(target, cliProfile);
+          await login(target, cliProfile, cliTier);
         }
         break;
       }
