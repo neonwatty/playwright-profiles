@@ -35,6 +35,7 @@ import {
 import { join, basename } from "path";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
+import { execFileSync } from "child_process";
 
 // ── Config ──────────────────────────────────────────────────────────
 const BASE_DIR = join(homedir(), ".playwright-cli");
@@ -146,9 +147,48 @@ function profileDir(profileName) {
 
 // ── Shared browser launch ───────────────────────────────────────────
 
+function checkChromeRunning() {
+  if (process.platform !== "darwin" && process.platform !== "linux") return;
+  try {
+    const result = execFileSync("pgrep", ["-f", "Google Chrome"], {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const pids = result.trim().split("\n").filter(Boolean);
+    if (pids.length > 0) {
+      console.error(
+        "\n⛔ Chrome is already running (PIDs: " + pids.join(", ") + ").",
+      );
+      console.error(
+        "   Launching a second Chrome instance can corrupt your browser's session state",
+      );
+      console.error("   (including Google sign-in across all tabs).");
+      console.error(
+        "\n   To fix: quit Chrome first, then re-run this command.",
+      );
+      console.error("   Or run: kill " + pids.join(" ") + "\n");
+      process.exit(1);
+    }
+  } catch {
+    // pgrep returns exit code 1 when no matches — safe to proceed
+  }
+}
+
+function checkProfileLock(dir) {
+  const lockPath = join(dir, "SingletonLock");
+  if (existsSync(lockPath)) {
+    console.error(`\n⛔ Profile directory is locked: ${dir}`);
+    console.error("   Another Chrome process is using this profile.");
+    console.error(`   Run: rm "${lockPath}" (if no Chrome process is running)`);
+    process.exit(1);
+  }
+}
+
 async function launchBrowser(profileName) {
+  checkChromeRunning();
   const { chromium } = await import("playwright");
   const dir = profileDir(profileName);
+  checkProfileLock(dir);
   mkdirSync(dir, { recursive: true });
 
   if (!existsSync(CHROME_PATH)) {
