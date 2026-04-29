@@ -123,6 +123,8 @@ playwright-cli reload
 
 Uses real Chrome with persistent profile. Overrides session isolation and requires headed mode, but bypasses bot detection.
 
+> **⚠ Chrome singleton warning:** On macOS, only one Chrome binary instance can run at a time. Using `--browser chrome` launches the real Chrome app — if the user's personal Chrome is already open, this will conflict. The Playwright CLI daemon may also leave orphaned Chrome processes that block normal Chrome usage. **Always prefer `state-load` (Tier 1).** Only use Tier 2 when Tier 1 fails, and close the session promptly afterward.
+
 ```bash
 playwright-cli open <url> --headed --browser chrome --persistent --profile ~/.playwright-cli/chrome-profile
 ```
@@ -175,6 +177,31 @@ kill $(pgrep -f "chrome-profile")
 ```
 
 Then re-run the sign-in command.
+
+### Stale Daemon Cleanup
+
+The Playwright CLI runs browser sessions as background daemon processes. If a session using `--browser chrome` is not closed properly, the orphaned Chrome process can block normal Chrome usage on macOS (clicking Chrome opens a blank window or does nothing).
+
+**Symptoms:**
+
+- Chrome won't open normally (clicking the icon does nothing or opens blank)
+- `ps aux | grep "Google Chrome"` shows Chrome processes you didn't launch
+- `playwright-cli list` shows sessions with no active socket
+
+**Fix:**
+
+```bash
+# Kill all playwright-cli daemons
+playwright-cli kill-all
+
+# If Chrome is still stuck, kill orphaned Chrome processes
+pkill -f "Google Chrome.*remote-debugging-port"
+
+# Verify cleanup
+playwright-cli list
+```
+
+**Prevention:** Always close Tier 2 browsing sessions when done. Prefer `state-load` (Tier 1) to avoid this entirely.
 
 ## Additional Resources
 

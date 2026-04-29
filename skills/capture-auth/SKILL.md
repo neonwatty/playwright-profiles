@@ -94,7 +94,7 @@ playwright-cli snapshot
 
 Take a snapshot to confirm the user is signed in. If the app redirects to the login page, the session may not have saved correctly — re-run sign-in.
 
-**Only use `--persistent --profile` when `state-load` fails** (sites with bot detection like Cloudflare Turnstile or Google OAuth):
+**Only use `--persistent --profile` when `state-load` fails** (sites with bot detection like Cloudflare Turnstile or Google OAuth). Note: `--browser chrome` launches the real Chrome app and can conflict with the user's personal Chrome on macOS — close the session promptly when done.
 
 ```bash
 playwright-cli open <app-url> --headed --browser chrome --persistent --profile ~/.playwright-cli/chrome-profile
