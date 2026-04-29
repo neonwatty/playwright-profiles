@@ -54,6 +54,12 @@ Tell the user to run the sign-in command in a separate terminal:
 node ~/.playwright-cli/sign-in.mjs login <name>
 ```
 
+The script defaults to Playwright's built-in Chromium, which works while Chrome is open. Custom apps rarely have bot detection, so this is almost always fine. If the user's app uses Google OAuth for login and it gets blocked, retry with `--tier chrome` (Chrome must be closed first):
+
+```
+node ~/.playwright-cli/sign-in.mjs login <name> --tier chrome
+```
+
 This is interactive — Claude cannot run it. The user signs in manually. The script auto-detects completion using the `waitFor` pattern (defaults to the hostname when omitted from `add`). The user can also press Enter at any time to save manually.
 
 ### Step 4: Validate and test

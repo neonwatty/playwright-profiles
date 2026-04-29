@@ -57,15 +57,15 @@ Before browsing any external service, perform these checks:
 
 ### Tier Selection (RT-11)
 
-Cross-reference the target URL against known bot-protected domains. These domains **must** use Tier 2 (`--persistent --profile`) and **cannot** use `state-load`:
+The `login` command defaults to Playwright's bundled Chromium (`--tier chromium`), which works while the user's Chrome is open. If the login is blocked by bot detection (Cloudflare Turnstile, Google OAuth "This browser is not secure"), the user should retry with `--tier chrome`:
 
-- `cloudflare.com`, `dash.cloudflare.com`
-- `google.com`, `accounts.google.com`
-- `console.aws.amazon.com`
+```
+node ~/.playwright-cli/sign-in.mjs login <site> --tier chrome
+```
 
-If the target URL matches any of these domains and the planned approach is Tier 1 (state-load), warn the user and switch to Tier 2. Do not attempt state-load against these sites — it will fail silently.
+The `--tier chrome` preference is saved per-site in `sites.json` — future logins for that site automatically use real Chrome. The user must close their personal Chrome before running `--tier chrome`.
 
-For all other sites, default to Tier 1 (state-load) and fall back to Tier 2 only if state-load fails.
+Do not assume which sites need `--tier chrome`. Let the user discover it on first login. The script prints a hint when login appears to fail.
 
 ### Auth Freshness (RT-12)
 
