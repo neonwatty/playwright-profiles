@@ -50,6 +50,31 @@ skills/auth-browse/scripts/sign-in.mjs
 
 ## Workflow
 
+## Pre-Browse Validation
+
+Before browsing any external service, perform these checks:
+
+### Tier Selection (RT-11)
+
+Cross-reference the target URL against known bot-protected domains. These domains **must** use Tier 2 (`--persistent --profile`) and **cannot** use `state-load`:
+
+- `cloudflare.com`, `dash.cloudflare.com`
+- `google.com`, `accounts.google.com`
+- `console.aws.amazon.com`
+
+If the target URL matches any of these domains and the planned approach is Tier 1 (state-load), warn the user and switch to Tier 2. Do not attempt state-load against these sites — it will fail silently.
+
+For all other sites, default to Tier 1 (state-load) and fall back to Tier 2 only if state-load fails.
+
+### Auth Freshness (RT-12)
+
+Before loading any auth state, check whether it is still valid:
+
+1. Run `node ~/.playwright-cli/sign-in.mjs check <site>` via Bash.
+2. Look at the output. If it shows `Status: EXPIRED` or any `⚠ Auth ... EXPIRED` lines, the auth is stale.
+3. If stale: inform the user and prompt for re-auth (`node ~/.playwright-cli/sign-in.mjs login <site>`) **before** attempting to browse. Do not load expired auth and navigate — it wastes time.
+4. If healthy: proceed with the browsing workflow below.
+
 ### Step 1: Check existing auth
 
 ```bash
