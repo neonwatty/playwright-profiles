@@ -461,6 +461,11 @@ async function login(siteName, profileName, cliTier) {
 
   const tier = resolveTier({ cliTier, siteConfig: site });
 
+  // Persist tier preference when explicitly set via --tier
+  if (cliTier) {
+    saveSiteTier(siteName, tier);
+  }
+
   await performLogin({
     url: site.url,
     outFile: authFile(siteName),
@@ -482,6 +487,12 @@ async function loginUrl(url, profileName, cliTier) {
 
   const tier = resolveTier({ cliTier, siteConfig: {} });
   const hostname = parsed.hostname.replace(/\./g, "-");
+
+  // Persist tier preference when explicitly set via --tier
+  if (cliTier) {
+    saveSiteTier(hostname, tier);
+  }
+
   await performLogin({
     url,
     outFile: authFile(hostname),
@@ -668,6 +679,23 @@ function resolveTier({ cliTier, siteConfig }) {
   return DEFAULT_TIER;
 }
 
+function saveSiteTier(name, tier) {
+  let custom = {};
+  if (existsSync(SITES_FILE)) {
+    try {
+      custom = JSON.parse(readFileSync(SITES_FILE, "utf-8"));
+    } catch {
+      custom = {};
+    }
+  }
+  if (!custom[name]) {
+    custom[name] = {};
+  }
+  custom[name].tier = tier;
+  mkdirSync(BASE_DIR, { recursive: true });
+  writeFileSync(SITES_FILE, JSON.stringify(custom, null, 2) + "\n");
+}
+
 // ── Exports (for testing) ──────────────────────────────────────────
 export {
   profileDir,
@@ -676,6 +704,7 @@ export {
   validateName,
   formatDelta,
   resolveTier,
+  saveSiteTier,
 };
 
 // ── CLI entrypoint ─────────────────────────────────────────────────
