@@ -621,15 +621,15 @@ function printHelp() {
   console.log(`
 Persistent browser sign-in for external services.
 
-Launches real Chrome with automation flags stripped so Google OAuth,
-Cloudflare Turnstile, and other bot-detection systems allow sign-in.
+Defaults to Playwright's bundled Chromium (works while Chrome is open).
+Use --tier chrome for sites with bot detection (Google OAuth, Cloudflare).
 Auth state accumulates in a Chrome profile at ~/.playwright-cli/.
 
 Usage: node sign-in.mjs <command> [args]
 
 Commands:
-  login <site> [--profile <name>]   Sign in and save auth state
-  login <url>  [--profile <name>]   Sign into an arbitrary URL
+  login <site> [--profile <name>] [--tier chromium|chrome]   Sign in and save auth state
+  login <url>  [--profile <name>] [--tier chromium|chrome]   Sign into an arbitrary URL
   check [site]                       Check expiry status of saved auth states
   list                               List available site shortcuts
   add <name> <url> [waitFor]         Add a custom site shortcut
@@ -640,6 +640,13 @@ Options:
                       Useful for multiple accounts on the same domain
                       (e.g., admin vs planner on the same app).
                       Without this flag, uses the shared default profile.
+
+  --tier <value>      Browser to use for sign-in:
+                      "chromium" (default) — Playwright's bundled Chromium.
+                        Works while your Chrome is open. Best for most sites.
+                      "chrome" — real Google Chrome with bot-detection bypass.
+                        Required for Cloudflare, Google OAuth, AWS. Chrome must
+                        be closed first. Preference is saved per-site.
 
 Sites: ${Object.keys(sites).join(", ")}
 
@@ -652,6 +659,9 @@ Examples:
   # Multi-user / QA profiles
   node sign-in.mjs login seatify-admin --profile seatify-admin
   node sign-in.mjs login seatify-planner --profile seatify-planner
+
+  # Bot-protected site (saves preference for future logins)
+  node sign-in.mjs login cloudflare --tier chrome
 
 After signing in, browse authenticated with playwright-cli:
   playwright-cli open <url> --headed --browser chrome \\
