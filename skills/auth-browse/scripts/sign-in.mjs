@@ -3,13 +3,13 @@
 /**
  * Persistent browser sign-in script for external services.
  *
- * Launches real Chrome with automation flags stripped so Google OAuth,
- * Cloudflare Turnstile, and other bot-detection systems allow sign-in.
- * Auth state accumulates in a Chrome profile at ~/.playwright-cli/.
+ * Defaults to Playwright's bundled Chromium (works while Chrome is open).
+ * Use --tier chrome for sites with bot detection (Google OAuth, Cloudflare).
+ * Auth state accumulates in a browser profile at ~/.playwright-cli/.
  * Use --profile <name> for isolated profiles (multi-user/QA).
  *
  * Usage:
- *   node sign-in.mjs login <site|url> [--profile <name>]  Sign in and save auth state
+ *   node sign-in.mjs login <site|url> [--profile <name>] [--tier chromium|chrome]
  *   node sign-in.mjs check [site]        Check saved auth expiry
  *   node sign-in.mjs list                List preconfigured sites
  *   node sign-in.mjs add <name> <url> [waitFor]  Add a new site shortcut
@@ -19,7 +19,7 @@
  */
 
 /**
- * @typedef {{ url: string, waitFor: string }} SiteConfig
+ * @typedef {{ url: string, waitFor: string, tier?: string }} SiteConfig
  * `waitFor` is a URL substring that indicates successful sign-in.
  * It must NOT match the login URL itself — use a post-login path
  * (e.g., '/dashboard', '/organizations') to avoid false auto-detect.
@@ -61,6 +61,10 @@ if (!(process.platform in CHROME_PATHS)) {
 }
 const CHROME_PATH = CHROME_PATHS[process.platform] || CHROME_PATHS.darwin;
 
+// ── Tier constants ───────────────────────────────────────────────────
+const VALID_TIERS = new Set(["chromium", "chrome"]);
+const DEFAULT_TIER = "chromium";
+
 // ── Sites config ────────────────────────────────────────────────────
 
 // Built-in site shortcuts. waitFor patterns must NOT match the login URL.
@@ -88,10 +92,12 @@ function loadSites() {
   if (existsSync(SITES_FILE)) {
     try {
       const custom = JSON.parse(readFileSync(SITES_FILE, "utf-8"));
-      Object.assign(sites, custom);
+      for (const [name, cfg] of Object.entries(custom)) {
+        sites[name] = { ...sites[name], ...cfg };
+      }
     } catch (err) {
       console.error(
-        `Warning: could not parse ${SITES_FILE}, using defaults: ${err.message}`,
+        `Warning: could not load ${SITES_FILE}, using defaults: ${err.message}`,
       );
     }
   }
@@ -200,43 +206,63 @@ function checkProfileLock(dir) {
   }
   if (lockExists) {
     console.error(`\n⛔ Profile directory is locked: ${dir}`);
-    console.error("   Another Chrome process is using this profile.");
-    console.error(`   Run: rm "${lockPath}" (if no Chrome process is running)`);
+    console.error("   Another browser process is using this profile.");
+    console.error(
+      `   Run: rm "${lockPath}" (if no browser process is running)`,
+    );
     process.exit(1);
   }
 }
 
-async function launchBrowser(profileName) {
-  checkChromeRunning();
+async function launchBrowser(profileName, tier = DEFAULT_TIER) {
+  if (tier === "chrome") {
+    checkChromeRunning();
+  }
   const { chromium } = await import("playwright");
   const dir = profileDir(profileName);
   checkProfileLock(dir);
   mkdirSync(dir, { recursive: true });
 
-  if (!existsSync(CHROME_PATH)) {
-    console.error(`Chrome not found at: ${CHROME_PATH}`);
-    console.error("Install Google Chrome or edit CHROME_PATHS in this script.");
-    process.exit(1);
+  if (tier === "chrome") {
+    if (!existsSync(CHROME_PATH)) {
+      console.error(`Chrome not found at: ${CHROME_PATH}`);
+      console.error(
+        "Install Google Chrome or edit CHROME_PATHS in this script.",
+      );
+      process.exit(1);
+    }
   }
 
+  const launchOptions =
+    tier === "chrome"
+      ? {
+          executablePath: CHROME_PATH,
+          headless: false,
+          ignoreDefaultArgs: ["--enable-automation"],
+          args: ["--disable-blink-features=AutomationControlled"],
+        }
+      : {
+          headless: false,
+        };
+
+  console.log(
+    `  Using ${tier === "chrome" ? "real Chrome" : "Playwright Chromium"}`,
+  );
+
   try {
-    return await chromium.launchPersistentContext(dir, {
-      executablePath: CHROME_PATH,
-      headless: false,
-      ignoreDefaultArgs: ["--enable-automation"],
-      args: ["--disable-blink-features=AutomationControlled"],
-    });
+    return await chromium.launchPersistentContext(dir, launchOptions);
   } catch (err) {
+    const browser = tier === "chrome" ? "Chrome" : "Chromium";
     if (
       err.message.includes("existing browser session") ||
       err.message.includes("Target page, context or browser has been closed")
     ) {
       console.error(
-        `Chrome is already running with profile "${profileName || "default"}".`,
+        `${browser} is already running with profile "${profileName || "default"}".`,
       );
       console.error(`Close it or run: kill $(pgrep -f "${basename(dir)}")`);
     } else {
-      console.error(`Failed to launch Chrome: ${err.message}`);
+      console.error(`Failed to launch ${browser}: ${err.message}`);
     }
     process.exit(1);
   }
@@ -299,14 +325,17 @@ async function performLogin({
   siteName,
   waitForPattern,
   profileName,
+  tier,
 }) {
   console.log(`\n🔐 Signing into: ${siteName} (${url})`);
   if (profileName && profileName !== "default") {
-    console.log(`   Chrome profile: chrome-profile-${profileName}`);
+    console.log(
+      `   ${tier === "chrome" ? "Chrome" : "Browser"} profile: chrome-profile-${profileName}`,
+    );
   }
   console.log(`   Auth will be saved to: ${outFile}\n`);
 
-  const context = await launchBrowser(profileName);
+  const context = await launchBrowser(profileName, tier);
   const profileHint = profileName
     ? `chrome-profile-${profileName}`
     : "chrome-profile";
@@ -428,7 +457,7 @@ async function performLogin({
 
 // ── Commands ────────────────────────────────────────────────────────
 
-async function login(siteName, profileName) {
+async function login(siteName, profileName, cliTier) {
   const sites = loadSites();
   const site = sites[siteName];
   if (!site) {
@@ -437,16 +466,24 @@ async function login(siteName, profileName) {
     process.exit(1);
   }
 
+  const tier = resolveTier({ cliTier, siteConfig: site });
+
+  // Persist tier preference when explicitly set via --tier
+  if (cliTier) {
+    saveSiteTier(siteName, tier);
+  }
+
   await performLogin({
     url: site.url,
     outFile: authFile(siteName),
     siteName,
     waitForPattern: site.waitFor,
     profileName,
+    tier,
   });
 }
 
-async function loginUrl(url, profileName) {
+async function loginUrl(url, profileName, cliTier) {
   let parsed;
   try {
     parsed = new URL(url);
@@ -456,12 +493,22 @@ async function loginUrl(url, profileName) {
   }
 
   const hostname = parsed.hostname.replace(/\./g, "-");
+  const sites = loadSites();
+  const existingSiteConfig = sites[hostname] || {};
+  const tier = resolveTier({ cliTier, siteConfig: existingSiteConfig });
+
+  // Persist tier preference when explicitly set via --tier
+  if (cliTier) {
+    saveSiteTier(hostname, tier);
+  }
+
   await performLogin({
     url,
     outFile: authFile(hostname),
     siteName: hostname,
     waitForPattern: null, // No auto-detect for arbitrary URLs
     profileName,
+    tier,
   });
 }
 
@@ -568,6 +615,9 @@ function printCookieSummary(state, siteName) {
 
   if (health.status === "expired") {
     console.log(`  ❌ Status: EXPIRED — re-authenticate before use`);
+    console.log(
+      `  Tip: if sign-in was blocked by bot detection, retry with: node sign-in.mjs login ${siteName} --tier chrome`,
+    );
   } else if (health.status === "degraded") {
     console.log(`  ⚠ Status: DEGRADED — see warnings above`);
   } else {
@@ -580,15 +630,15 @@ function printHelp() {
   console.log(`
 Persistent browser sign-in for external services.
 
-Launches real Chrome with automation flags stripped so Google OAuth,
-Cloudflare Turnstile, and other bot-detection systems allow sign-in.
-Auth state accumulates in a Chrome profile at ~/.playwright-cli/.
+Defaults to Playwright's bundled Chromium (works while Chrome is open).
+Use --tier chrome for sites with bot detection (Google OAuth, Cloudflare).
+Auth state accumulates in a browser profile at ~/.playwright-cli/.
 
 Usage: node sign-in.mjs <command> [args]
 
 Commands:
-  login <site> [--profile <name>]   Sign in and save auth state
-  login <url>  [--profile <name>]   Sign into an arbitrary URL
+  login <site> [--profile <name>] [--tier chromium|chrome]   Sign in and save auth state
+  login <url>  [--profile <name>] [--tier chromium|chrome]   Sign into an arbitrary URL
   check [site]                       Check expiry status of saved auth states
   list                               List available site shortcuts
   add <name> <url> [waitFor]         Add a custom site shortcut
@@ -599,6 +649,13 @@ Options:
                       Useful for multiple accounts on the same domain
                       (e.g., admin vs planner on the same app).
                       Without this flag, uses the shared default profile.
+
+  --tier <value>      Browser to use for sign-in:
+                      "chromium" (default) — Playwright's bundled Chromium.
+                        Works while your Chrome is open. Best for most sites.
+                      "chrome" — real Google Chrome with bot-detection bypass.
+                        Often needed for Cloudflare, Google OAuth, AWS. Chrome must
+                        be closed first. Preference is saved per-site.
 
 Sites: ${Object.keys(sites).join(", ")}
 
@@ -612,6 +669,9 @@ Examples:
   node sign-in.mjs login seatify-admin --profile seatify-admin
   node sign-in.mjs login seatify-planner --profile seatify-planner
 
+  # Bot-protected site (saves preference for future logins)
+  node sign-in.mjs login cloudflare --tier chrome
+
 After signing in, browse authenticated with playwright-cli:
   playwright-cli open <url> --headed --browser chrome \\
     --persistent --profile ~/.playwright-cli/chrome-profile
@@ -624,8 +684,69 @@ Profile & auth files: ~/.playwright-cli/
 `);
 }
 
+// ── Tier resolution ─────────────────────────────────────────────────
+
+function resolveTier({ cliTier, siteConfig }) {
+  if (cliTier !== undefined) {
+    if (!VALID_TIERS.has(cliTier)) {
+      throw new Error(
+        `Invalid tier "${cliTier}". Must be "chromium" or "chrome".`,
+      );
+    }
+    return cliTier;
+  }
+  if (siteConfig.tier) {
+    if (VALID_TIERS.has(siteConfig.tier)) {
+      return siteConfig.tier;
+    }
+    console.error(
+      `Warning: invalid tier "${siteConfig.tier}" in site config, falling back to "${DEFAULT_TIER}".`,
+    );
+  }
+  return DEFAULT_TIER;
+}
+
+function saveSiteTier(name, tier) {
+  let custom = {};
+  if (existsSync(SITES_FILE)) {
+    try {
+      custom = JSON.parse(readFileSync(SITES_FILE, "utf-8"));
+    } catch (err) {
+      console.error(`\n⚠ ${SITES_FILE} contains invalid JSON: ${err.message}`);
+      console.error(
+        `  Refusing to overwrite — fix the file manually or delete it to start fresh.`,
+      );
+      console.error(`  Your --tier preference was NOT saved.`);
+      return;
+    }
+  }
+  if (!custom[name]) {
+    custom[name] = {};
+  }
+  custom[name].tier = tier;
+  try {
+    mkdirSync(BASE_DIR, { recursive: true });
+    writeFileSync(SITES_FILE, JSON.stringify(custom, null, 2) + "\n");
+  } catch (err) {
+    console.error(
+      `\n⚠ Failed to save tier preference to ${SITES_FILE}: ${err.message}`,
+    );
+    console.error(
+      `  Your --tier ${tier} choice will NOT be remembered for future logins.`,
+    );
+  }
+}
+
 // ── Exports (for testing) ──────────────────────────────────────────
-export { profileDir, authFile, loadSites, validateName, formatDelta };
+export {
+  profileDir,
+  authFile,
+  loadSites,
+  validateName,
+  formatDelta,
+  resolveTier,
+  saveSiteTier,
+};
 
 // ── CLI entrypoint ─────────────────────────────────────────────────
 const __filename = fileURLToPath(import.meta.url);
@@ -633,8 +754,9 @@ const __filename = fileURLToPath(import.meta.url);
 if (process.argv[1] === __filename) {
   const rawArgs = process.argv.slice(2);
 
-  // Extract --profile <name> from anywhere in the args
+  // Extract --profile <name> and --tier <chrome|chromium> from anywhere in the args
   let cliProfile;
+  let cliTier;
   const args = [];
   for (let i = 0; i < rawArgs.length; i++) {
     if (rawArgs[i] === "--profile") {
@@ -643,6 +765,18 @@ if (process.argv[1] === __filename) {
         process.exit(1);
       }
       cliProfile = rawArgs[++i];
+    } else if (rawArgs[i] === "--tier") {
+      if (i + 1 >= rawArgs.length) {
+        console.error("Error: --tier requires a value (chromium or chrome).");
+        process.exit(1);
+      }
+      cliTier = rawArgs[++i];
+      if (!VALID_TIERS.has(cliTier)) {
+        console.error(
+          `Error: invalid --tier value "${cliTier}". Must be "chromium" or "chrome".`,
+        );
+        process.exit(1);
+      }
     } else {
       args.push(rawArgs[i]);
     }
@@ -650,20 +784,24 @@ if (process.argv[1] === __filename) {
 
   const command = args[0] || "help";
 
+  if (cliTier && command !== "login") {
+    console.error(`Warning: --tier is only used with the "login" command.`);
+  }
+
   try {
     switch (command) {
       case "login": {
         const target = args[1];
         if (!target) {
           console.error(
-            "Usage: sign-in.mjs login <site|url> [--profile <name>]",
+            "Usage: sign-in.mjs login <site|url> [--profile <name>] [--tier chromium|chrome]",
           );
           process.exit(1);
         }
         if (target.startsWith("http")) {
-          await loginUrl(target, cliProfile);
+          await loginUrl(target, cliProfile, cliTier);
         } else {
-          await login(target, cliProfile);
+          await login(target, cliProfile, cliTier);
         }
         break;
       }

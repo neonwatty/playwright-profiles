@@ -41,3 +41,12 @@ export function makeCookie(overrides = {}) {
     ...overrides,
   };
 }
+
+/** Build a minimal site config object. Override any field via `overrides`. */
+export function makeSiteConfig(overrides = {}) {
+  return {
+    url: "https://example.com/login",
+    waitFor: "/dashboard",
+    ...overrides,
+  };
+}

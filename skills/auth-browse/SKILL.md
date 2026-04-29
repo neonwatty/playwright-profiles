@@ -1,16 +1,16 @@
 ---
 name: auth-browse
-description: This skill should be used when the user asks to "sign into Cloudflare", "browse Sentry authenticated", "open Supabase dashboard", "log into Vercel", "check auth status", "authenticate to AWS", or any request to browse an external service that requires authentication using playwright-cli. Also triggers on "sign in to <site>", "authenticate to <site>", "open <site> logged in", "browse <service> for me". Complements use-profiles (per-project roles) by providing global persistent auth for external services with bot-detection bypass.
+description: This skill should be used when the user asks to "sign into Cloudflare", "browse Sentry authenticated", "open Supabase dashboard", "log into Vercel", "check auth status", "authenticate to AWS", or any request to browse an external service that requires authentication using playwright-cli. Also triggers on "sign in to <site>", "authenticate to <site>", "open <site> logged in", "browse <service> for me". Complements use-profiles (per-project roles) by providing global persistent auth for external services. Defaults to Chromium; uses real Chrome (`--tier chrome`) only for bot-protected sites.
 ---
 
 # Authenticated Browsing with Playwright CLI
 
-Browse external services (Cloudflare, Sentry, PostHog, Supabase, Vercel, GitHub, AWS, etc.) using `playwright-cli` with persistent authentication that bypasses bot detection.
+Browse external services (Cloudflare, Sentry, PostHog, Supabase, Vercel, GitHub, AWS, etc.) using `playwright-cli` with persistent authentication. Defaults to Playwright's bundled Chromium (works while Chrome is open); use `--tier chrome` for sites with bot detection.
 
 ## How This Differs from use-profiles
 
 - **use-profiles**: Per-project, role-based auth (admin/user/speaker) for the project's own app, using Playwright MCP
-- **auth-browse**: Global, service-based auth for external dashboards (Cloudflare, Sentry, etc.) using `playwright-cli` with real Chrome to bypass bot detection
+- **auth-browse**: Global, service-based auth for external dashboards (Cloudflare, Sentry, etc.) using `playwright-cli` with persistent authentication. Defaults to Chromium; uses real Chrome for bot-protected sites
 
 Both skills can coexist. Use `use-profiles` for testing your app with different roles. Use `auth-browse` for browsing third-party services.
 
@@ -57,15 +57,15 @@ Before browsing any external service, perform these checks:
 
 ### Tier Selection (RT-11)
 
-Cross-reference the target URL against known bot-protected domains. These domains **must** use Tier 2 (`--persistent --profile`) and **cannot** use `state-load`:
+The `login` command defaults to Playwright's bundled Chromium (`--tier chromium`), which works while the user's Chrome is open. If the login is blocked by bot detection (Cloudflare Turnstile, Google OAuth "This browser is not secure"), the user should retry with `--tier chrome`:
 
-- `cloudflare.com`, `dash.cloudflare.com`
-- `google.com`, `accounts.google.com`
-- `console.aws.amazon.com`
+```
+node ~/.playwright-cli/sign-in.mjs login <site> --tier chrome
+```
 
-If the target URL matches any of these domains and the planned approach is Tier 1 (state-load), warn the user and switch to Tier 2. Do not attempt state-load against these sites — it will fail silently.
+The `--tier chrome` preference is saved per-site in `sites.json` — future logins for that site automatically use real Chrome. The user must close their personal Chrome before running `--tier chrome`.
 
-For all other sites, default to Tier 1 (state-load) and fall back to Tier 2 only if state-load fails.
+Do not assume which sites need `--tier chrome`. Let the user discover it on first login. The script prints a hint when login appears to fail.
 
 ### Auth Freshness (RT-12)
 
@@ -87,7 +87,7 @@ If auth is valid, skip to Step 3.
 
 ### Step 2: Sign in (if needed)
 
-The sign-in command is **interactive** — it opens Chrome for manual sign-in. This cannot be run via the Bash tool. Tell the user to run it in a separate terminal:
+The sign-in command is **interactive** — it opens a browser for manual sign-in. This cannot be run via the Bash tool. Tell the user to run it in a separate terminal:
 
 ```
 node ~/.playwright-cli/sign-in.mjs login <site>
@@ -109,7 +109,7 @@ For arbitrary URLs without adding a shortcut: `node ~/.playwright-cli/sign-in.mj
 
 Choose the right tier based on the target site:
 
-**Tier 1: `state-load` (most sites — GitHub, Vercel, Netlify, Railway, Render, Sentry, PostHog, Supabase):**
+**Tier 1: `state-load` (default for most sites):**
 
 Injects cookies into the existing headless session. Non-interfering — respects `cli.config.json` and per-repo session isolation.
 
@@ -119,9 +119,11 @@ playwright-cli state-load ~/.playwright-cli/auth-<site>.json
 playwright-cli reload
 ```
 
-**Tier 2: `--persistent --profile` (bot-protected sites — Cloudflare, Google, AWS):**
+**Tier 2: `--persistent --profile` (when state-load fails due to bot detection):**
 
 Uses real Chrome with persistent profile. Overrides session isolation and requires headed mode, but bypasses bot detection.
+
+> **⚠ Chrome singleton warning:** On macOS, only one Chrome binary instance can run at a time. Using `--browser chrome` launches the real Chrome app — if the user's personal Chrome is already open, this will conflict. The Playwright CLI daemon may also leave orphaned Chrome processes that block normal Chrome usage. **Always prefer `state-load` (Tier 1).** Only use Tier 2 when Tier 1 fails, and close the session promptly afterward.
 
 ```bash
 playwright-cli open <url> --headed --browser chrome --persistent --profile ~/.playwright-cli/chrome-profile
@@ -175,6 +177,31 @@ kill $(pgrep -f "chrome-profile")
 ```
 
 Then re-run the sign-in command.
+
+### Stale Daemon Cleanup
+
+The Playwright CLI runs browser sessions as background daemon processes. If a session using `--browser chrome` is not closed properly, the orphaned Chrome process can block normal Chrome usage on macOS (clicking Chrome opens a blank window or does nothing).
+
+**Symptoms:**
+
+- Chrome won't open normally (clicking the icon does nothing or opens blank)
+- `ps aux | grep "Google Chrome"` shows Chrome processes you didn't launch
+- `playwright-cli list` shows sessions with no active socket
+
+**Fix:**
+
+```bash
+# Kill all playwright-cli daemons
+playwright-cli kill-all
+
+# If Chrome is still stuck, kill orphaned Chrome processes
+pkill -f "Google Chrome.*remote-debugging-port"
+
+# Verify cleanup
+playwright-cli list
+```
+
+**Prevention:** Always close Tier 2 browsing sessions when done. Prefer `state-load` (Tier 1) to avoid this entirely.
 
 ## Additional Resources
 

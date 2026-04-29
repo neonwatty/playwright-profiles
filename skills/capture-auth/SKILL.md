@@ -54,6 +54,12 @@ Tell the user to run the sign-in command in a separate terminal:
 node ~/.playwright-cli/sign-in.mjs login <name>
 ```
 
+The script defaults to Playwright's built-in Chromium, which works while Chrome is open. Custom apps rarely have bot detection, so this is almost always fine. If the user's app uses Google OAuth for login and it gets blocked, retry with `--tier chrome` (Chrome must be closed first):
+
+```
+node ~/.playwright-cli/sign-in.mjs login <name> --tier chrome
+```
+
 This is interactive — Claude cannot run it. The user signs in manually. The script auto-detects completion using the `waitFor` pattern (defaults to the hostname when omitted from `add`). The user can also press Enter at any time to save manually.
 
 ### Step 4: Validate and test
@@ -88,7 +94,7 @@ playwright-cli snapshot
 
 Take a snapshot to confirm the user is signed in. If the app redirects to the login page, the session may not have saved correctly — re-run sign-in.
 
-**Only use `--persistent --profile` when `state-load` fails** (sites with bot detection like Cloudflare Turnstile or Google OAuth):
+**Only use `--persistent --profile` when `state-load` fails** (sites with bot detection like Cloudflare Turnstile or Google OAuth). Note: `--browser chrome` launches the real Chrome app and can conflict with the user's personal Chrome on macOS — close the session promptly when done.
 
 ```bash
 playwright-cli open <app-url> --headed --browser chrome --persistent --profile ~/.playwright-cli/chrome-profile
