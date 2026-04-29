@@ -606,6 +606,9 @@ function printCookieSummary(state, siteName) {
 
   if (health.status === "expired") {
     console.log(`  ❌ Status: EXPIRED — re-authenticate before use`);
+    console.log(
+      `  Tip: if sign-in was blocked by bot detection, retry with: node sign-in.mjs login ${siteName} --tier chrome`,
+    );
   } else if (health.status === "degraded") {
     console.log(`  ⚠ Status: DEGRADED — see warnings above`);
   } else {
