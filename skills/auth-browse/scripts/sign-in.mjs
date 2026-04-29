@@ -3,13 +3,13 @@
 /**
  * Persistent browser sign-in script for external services.
  *
- * Launches real Chrome with automation flags stripped so Google OAuth,
- * Cloudflare Turnstile, and other bot-detection systems allow sign-in.
+ * Defaults to Playwright's bundled Chromium (works while Chrome is open).
+ * Use --tier chrome for sites with bot detection (Google OAuth, Cloudflare).
  * Auth state accumulates in a Chrome profile at ~/.playwright-cli/.
  * Use --profile <name> for isolated profiles (multi-user/QA).
  *
  * Usage:
- *   node sign-in.mjs login <site|url> [--profile <name>]  Sign in and save auth state
+ *   node sign-in.mjs login <site|url> [--profile <name>] [--tier chromium|chrome]
  *   node sign-in.mjs check [site]        Check saved auth expiry
  *   node sign-in.mjs list                List preconfigured sites
  *   node sign-in.mjs add <name> <url> [waitFor]  Add a new site shortcut
@@ -19,7 +19,7 @@
  */
 
 /**
- * @typedef {{ url: string, waitFor: string }} SiteConfig
+ * @typedef {{ url: string, waitFor: string, tier?: string }} SiteConfig
  * `waitFor` is a URL substring that indicates successful sign-in.
  * It must NOT match the login URL itself — use a post-login path
  * (e.g., '/dashboard', '/organizations') to avoid false auto-detect.
@@ -248,16 +248,17 @@ async function launchBrowser(profileName, tier = DEFAULT_TIER) {
   try {
     return await chromium.launchPersistentContext(dir, launchOptions);
   } catch (err) {
+    const browser = tier === "chrome" ? "Chrome" : "Chromium";
     if (
       err.message.includes("existing browser session") ||
       err.message.includes("Target page, context or browser has been closed")
     ) {
       console.error(
-        `Chrome is already running with profile "${profileName || "default"}".`,
+        `${browser} is already running with profile "${profileName || "default"}".`,
       );
       console.error(`Close it or run: kill $(pgrep -f "${basename(dir)}")`);
     } else {
-      console.error(`Failed to launch Chrome: ${err.message}`);
+      console.error(`Failed to launch ${browser}: ${err.message}`);
     }
     process.exit(1);
   }

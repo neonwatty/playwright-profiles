@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from "fs";
+import {
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  mkdirSync,
+  unlinkSync,
+} from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { makeSiteConfig } from "./helpers.mjs";
@@ -78,6 +84,8 @@ describe("saveSiteTier (UT-14)", () => {
     } finally {
       if (backup) {
         writeFileSync(SITES_FILE, JSON.stringify(backup, null, 2) + "\n");
+      } else if (existsSync(SITES_FILE)) {
+        unlinkSync(SITES_FILE);
       }
     }
   });
@@ -99,6 +107,8 @@ describe("saveSiteTier (UT-14)", () => {
     } finally {
       if (backup) {
         writeFileSync(SITES_FILE, JSON.stringify(backup, null, 2) + "\n");
+      } else if (existsSync(SITES_FILE)) {
+        unlinkSync(SITES_FILE);
       }
     }
   });
