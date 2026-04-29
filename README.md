@@ -2,6 +2,10 @@
 
 Manage Playwright authentication profiles for Claude Code — both per-project role-based profiles and global persistent auth for external services.
 
+> **Note:** This repo is now the auth-only distribution. The full QA workflow plugin, including these auth/profile capabilities plus workflow generators, Playwright converters, QA agents, and CI helpers, lives in [`neonwatty/qa-skills`](https://github.com/neonwatty/qa-skills).
+
+Use this plugin when you only need reusable authenticated browsing. Use `qa-skills` when you also want QA workflow generation, Playwright conversion, runners, agents, audits, and CI scaffolding.
+
 ## What it does
 
 ### Per-project profiles (role-based)
@@ -134,6 +138,14 @@ Each `--profile <name>` creates an independent Chrome user data directory (`chro
 **Per-project profiles:** Run `/setup-profiles` again to refresh specific profiles.
 
 **Global auth:** Run `node ~/.playwright-cli/sign-in.mjs login <site>` for any expired service.
+
+### Custom auth directory
+
+By default, global auth files live in `~/.playwright-cli`. Set `PLAYWRIGHT_CLI_HOME` to use a different directory for tests, isolated projects, or temporary sessions:
+
+```bash
+PLAYWRIGHT_CLI_HOME=.tmp/playwright-auth node ~/.playwright-cli/sign-in.mjs list
+```
 
 ## How auth-browse bypasses bot detection
 

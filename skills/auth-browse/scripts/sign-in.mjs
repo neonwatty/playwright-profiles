@@ -31,6 +31,7 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  realpathSync,
   readdirSync,
 } from "fs";
 import { join, basename } from "path";
@@ -44,7 +45,8 @@ import {
 } from "./cookie-analysis.mjs";
 
 // ── Config ──────────────────────────────────────────────────────────
-const BASE_DIR = join(homedir(), ".playwright-cli");
+const BASE_DIR =
+  process.env.PLAYWRIGHT_CLI_HOME || join(homedir(), ".playwright-cli");
 const PROFILE_DIR = join(BASE_DIR, "chrome-profile");
 const SITES_FILE = join(BASE_DIR, "sites.json");
 
@@ -633,6 +635,7 @@ Persistent browser sign-in for external services.
 Defaults to Playwright's bundled Chromium (works while Chrome is open).
 Use --tier chrome for sites with bot detection (Google OAuth, Cloudflare).
 Auth state accumulates in a browser profile at ~/.playwright-cli/.
+Set PLAYWRIGHT_CLI_HOME to use a different auth directory.
 
 Usage: node sign-in.mjs <command> [args]
 
@@ -751,7 +754,16 @@ export {
 // ── CLI entrypoint ─────────────────────────────────────────────────
 const __filename = fileURLToPath(import.meta.url);
 
-if (process.argv[1] === __filename) {
+function isCliEntrypoint() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(__filename);
+  } catch {
+    return process.argv[1] === __filename;
+  }
+}
+
+if (isCliEntrypoint()) {
   const rawArgs = process.argv.slice(2);
 
   // Extract --profile <name> and --tier <chrome|chromium> from anywhere in the args
