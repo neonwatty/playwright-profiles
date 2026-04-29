@@ -320,6 +320,7 @@ async function performLogin({
   siteName,
   waitForPattern,
   profileName,
+  tier,
 }) {
   console.log(`\n🔐 Signing into: ${siteName} (${url})`);
   if (profileName && profileName !== "default") {
@@ -327,7 +328,7 @@ async function performLogin({
   }
   console.log(`   Auth will be saved to: ${outFile}\n`);
 
-  const context = await launchBrowser(profileName);
+  const context = await launchBrowser(profileName, tier);
   const profileHint = profileName
     ? `chrome-profile-${profileName}`
     : "chrome-profile";
@@ -449,7 +450,7 @@ async function performLogin({
 
 // ── Commands ────────────────────────────────────────────────────────
 
-async function login(siteName, profileName) {
+async function login(siteName, profileName, cliTier) {
   const sites = loadSites();
   const site = sites[siteName];
   if (!site) {
@@ -458,16 +459,19 @@ async function login(siteName, profileName) {
     process.exit(1);
   }
 
+  const tier = resolveTier({ cliTier, siteConfig: site });
+
   await performLogin({
     url: site.url,
     outFile: authFile(siteName),
     siteName,
     waitForPattern: site.waitFor,
     profileName,
+    tier,
   });
 }
 
-async function loginUrl(url, profileName) {
+async function loginUrl(url, profileName, cliTier) {
   let parsed;
   try {
     parsed = new URL(url);
@@ -476,6 +480,7 @@ async function loginUrl(url, profileName) {
     process.exit(1);
   }
 
+  const tier = resolveTier({ cliTier, siteConfig: {} });
   const hostname = parsed.hostname.replace(/\./g, "-");
   await performLogin({
     url,
@@ -483,6 +488,7 @@ async function loginUrl(url, profileName) {
     siteName: hostname,
     waitForPattern: null, // No auto-detect for arbitrary URLs
     profileName,
+    tier,
   });
 }
 
