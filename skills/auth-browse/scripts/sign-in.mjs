@@ -624,8 +624,35 @@ Profile & auth files: ~/.playwright-cli/
 `);
 }
 
+// ── Tier resolution ─────────────────────────────────────────────────
+
+const VALID_TIERS = new Set(["chromium", "chrome"]);
+const DEFAULT_TIER = "chromium";
+
+function resolveTier({ cliTier, siteConfig }) {
+  if (cliTier !== undefined) {
+    if (!VALID_TIERS.has(cliTier)) {
+      throw new Error(
+        `Invalid tier "${cliTier}". Must be "chromium" or "chrome".`,
+      );
+    }
+    return cliTier;
+  }
+  if (siteConfig.tier && VALID_TIERS.has(siteConfig.tier)) {
+    return siteConfig.tier;
+  }
+  return DEFAULT_TIER;
+}
+
 // ── Exports (for testing) ──────────────────────────────────────────
-export { profileDir, authFile, loadSites, validateName, formatDelta };
+export {
+  profileDir,
+  authFile,
+  loadSites,
+  validateName,
+  formatDelta,
+  resolveTier,
+};
 
 // ── CLI entrypoint ─────────────────────────────────────────────────
 const __filename = fileURLToPath(import.meta.url);
