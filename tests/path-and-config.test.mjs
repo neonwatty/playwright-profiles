@@ -42,6 +42,28 @@ describe("authFile (UT-07)", () => {
   });
 });
 
+describe("validateName", () => {
+  it("accepts valid names", () => {
+    expect(() => validateName("my-site_2", "test")).not.toThrow();
+  });
+
+  it("rejects empty string", () => {
+    expect(() => validateName("", "test")).toThrow(/Invalid/);
+  });
+
+  it("rejects names with dots", () => {
+    expect(() => validateName("my.site", "test")).toThrow(/Invalid/);
+  });
+
+  it("rejects names with slashes", () => {
+    expect(() => validateName("../../etc", "test")).toThrow(/Invalid/);
+  });
+
+  it("rejects names with spaces", () => {
+    expect(() => validateName("my site", "test")).toThrow(/Invalid/);
+  });
+});
+
 describe("loadSites (UT-08, UT-09)", () => {
   it("returns all 10 default sites", () => {
     const sites = loadSites();

@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { describe, it, expect } from "vitest";
 import { makeSupabaseCookieValue, makeJwt, makeCookie } from "./helpers.mjs";
 import {
@@ -326,5 +327,51 @@ describe("analyzeCookieHealth (UT-10)", () => {
     expect(health.warnings).toEqual(
       expect.arrayContaining([expect.stringMatching(/no auth/i)]),
     );
+  });
+
+  it("reports expired when Supabase expires_at is valid but inner JWT exp is past", () => {
+    const now = Math.floor(Date.now() / 1000);
+    // expires_at is in the future, but the access_token JWT exp is in the past
+    const jwt = makeJwt({ sub: "user", exp: now - 600, iat: now - 4200 });
+    const session = JSON.stringify({
+      access_token: jwt,
+      refresh_token: "fake-refresh",
+      expires_at: now + 3600,
+      token_type: "bearer",
+    });
+    const value = "base64-" + Buffer.from(session).toString("base64");
+    const cookies = [
+      makeCookie({
+        name: "sb-test-auth-token",
+        value,
+        expires: Date.now() / 1000 + 86400,
+      }),
+    ];
+    const health = analyzeCookieHealth(cookies);
+    expect(health.status).toBe("expired");
+    expect(health.jwtIssues.length).toBeGreaterThan(0);
+    expect(health.jwtIssues[0]).toMatch(/access token/i);
+  });
+
+  it("reports degraded (not healthy) when warnings present but no jwt issues", () => {
+    const cookies = [makeCookie({ name: "_ga" }), makeCookie({ name: "_fbp" })];
+    const health = analyzeCookieHealth(cookies);
+    expect(health.status).toBe("degraded");
+  });
+
+  it("selects the soonest-expiring auth cookie across multiple", () => {
+    const now = Date.now() / 1000;
+    const cookies = [
+      makeCookie({
+        name: "auth-later",
+        expires: now + 86400,
+      }),
+      makeCookie({
+        name: "auth-sooner",
+        expires: now + 3600,
+      }),
+    ];
+    const health = analyzeCookieHealth(cookies);
+    expect(health.soonestAuthExpiry.name).toBe("auth-sooner");
   });
 });

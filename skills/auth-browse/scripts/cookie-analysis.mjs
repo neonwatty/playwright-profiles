@@ -2,8 +2,9 @@ import { Buffer } from "buffer";
 
 /**
  * Decode a Supabase `base64-<session JSON>` cookie value.
- * Returns the parsed session object ({ access_token, refresh_token, expires_at })
- * or null if the value is not a Supabase cookie.
+ * Returns the parsed session object if it contains a numeric `expires_at` field;
+ * may also include `access_token` and `refresh_token` (not validated).
+ * Returns null if the value is not a Supabase cookie or lacks `expires_at`.
  */
 export function decodeSupabaseCookie(value) {
   if (typeof value !== "string" || !value.startsWith("base64-")) return null;
@@ -143,21 +144,42 @@ export function analyzeCookieHealth(cookies) {
     warnings.push("No auth-relevant cookies found — session may not restore");
   }
 
+  let soonestAuthExpiry = null;
   for (const c of authCookies) {
     const supabase = decodeSupabaseCookie(c.value);
+    let realExp;
     if (supabase) {
       if (supabase.expires_at < now) {
         jwtIssues.push(
           `Supabase session "${c.name}" expired ${formatDelta(now - supabase.expires_at)} ago (cookie shell says ${formatDelta(c.expires - now)} remaining)`,
         );
+      } else if (supabase.access_token) {
+        const tokenExp = decodeJwtExp(supabase.access_token);
+        if (tokenExp !== null && tokenExp < now) {
+          jwtIssues.push(
+            `Supabase access token in "${c.name}" expired ${formatDelta(now - tokenExp)} ago (session.expires_at says ${formatDelta(supabase.expires_at - now)} remaining)`,
+          );
+        }
       }
-      continue;
+      realExp = supabase.expires_at;
+    } else {
+      const jwtExp = decodeJwtExp(c.value);
+      if (jwtExp !== null && jwtExp < now) {
+        jwtIssues.push(
+          `JWT "${c.name}" expired ${formatDelta(now - jwtExp)} ago (cookie shell says ${formatDelta(c.expires - now)} remaining)`,
+        );
+      }
+      realExp = jwtExp ?? (c.expires > 0 ? c.expires : null);
     }
-    const jwtExp = decodeJwtExp(c.value);
-    if (jwtExp !== null && jwtExp < now) {
-      jwtIssues.push(
-        `JWT "${c.name}" expired ${formatDelta(now - jwtExp)} ago (cookie shell says ${formatDelta(c.expires - now)} remaining)`,
-      );
+    if (
+      realExp !== null &&
+      (soonestAuthExpiry === null || realExp < soonestAuthExpiry.expires)
+    ) {
+      soonestAuthExpiry = {
+        name: c.name,
+        expires: realExp,
+        remaining: realExp - now,
+      };
     }
   }
 
@@ -169,30 +191,6 @@ export function analyzeCookieHealth(cookies) {
       warnings.push(
         `${classification.session_only} session-only cookies (${pct}%) will not survive state-load — use persistent profile instead`,
       );
-    }
-  }
-
-  let soonestAuthExpiry = null;
-  for (const c of authCookies) {
-    let realExp = c.expires > 0 ? c.expires : null;
-    const supabase = decodeSupabaseCookie(c.value);
-    if (supabase) {
-      realExp = supabase.expires_at;
-    } else {
-      const jwtExp = decodeJwtExp(c.value);
-      if (jwtExp !== null) {
-        realExp = jwtExp;
-      }
-    }
-    if (
-      realExp !== null &&
-      (soonestAuthExpiry === null || realExp < soonestAuthExpiry.expires)
-    ) {
-      soonestAuthExpiry = {
-        name: c.name,
-        expires: realExp,
-        remaining: realExp - now,
-      };
     }
   }
 
@@ -211,7 +209,8 @@ export function analyzeCookieHealth(cookies) {
   return { status, classification, soonestAuthExpiry, jwtIssues, warnings };
 }
 
-function formatDelta(seconds) {
+/** Format a duration in seconds to a human-readable string (e.g., "3h", "45m"). */
+export function formatDelta(seconds) {
   const abs = Math.abs(seconds);
   if (abs < 60) return `${Math.round(abs)}s`;
   if (abs < 3600) return `${Math.round(abs / 60)}m`;
@@ -219,13 +218,13 @@ function formatDelta(seconds) {
   return `${Math.round(abs / 86400)}d`;
 }
 
-/** OAuth provider domains to always keep for non-localhost targets. */
+/** Google OAuth domains kept for non-localhost targets to support Google sign-in flows. */
 const OAUTH_DOMAINS = ["accounts.google.com", "google.com"];
 
 /**
  * Filter cookies to only those relevant to the target URL.
  * Keeps cookies matching the target's domain (including parent domains)
- * and common OAuth providers (for non-localhost targets).
+ * and Google OAuth domains (for non-localhost targets).
  */
 export function filterCookiesByDomain(cookies, targetUrl) {
   let targetHost;

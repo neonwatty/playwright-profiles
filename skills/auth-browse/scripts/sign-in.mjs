@@ -39,6 +39,7 @@ import { execFileSync } from "child_process";
 import {
   analyzeCookieHealth,
   filterCookiesByDomain,
+  formatDelta,
 } from "./cookie-analysis.mjs";
 
 // ── Config ──────────────────────────────────────────────────────────
@@ -173,8 +174,15 @@ function checkChromeRunning() {
       console.error("   Or run: kill " + pids.join(" ") + "\n");
       process.exit(1);
     }
-  } catch {
-    // pgrep returns exit code 1 when no matches — safe to proceed
+  } catch (err) {
+    // pgrep exits 1 when no processes match — that's the happy path.
+    if (err.status === 1) return;
+    // Any other error (pgrep not installed, permissions, etc.) means
+    // the check could not run. Warn so the user knows the safety net is off.
+    console.error(
+      `Warning: could not check for running Chrome (${err.code ?? err.message}). ` +
+        `Proceeding — ensure Chrome is not already open to avoid profile corruption.`,
+    );
   }
 }
 
@@ -516,16 +524,16 @@ function printCookieSummary(state, siteName) {
     const r = health.soonestAuthExpiry.remaining;
     if (r <= 0) {
       console.log(
-        `  ⚠ Auth "${health.soonestAuthExpiry.name}" EXPIRED ${formatDuration(-r)} ago`,
+        `  ⚠ Auth "${health.soonestAuthExpiry.name}" EXPIRED ${formatDelta(-r)} ago`,
       );
       console.log(`    Re-run: node sign-in.mjs login ${siteName}`);
     } else if (r < 3600) {
       console.log(
-        `  ⚠ Auth "${health.soonestAuthExpiry.name}" expires in ${formatDuration(r)}`,
+        `  ⚠ Auth "${health.soonestAuthExpiry.name}" expires in ${formatDelta(r)}`,
       );
     } else {
       console.log(
-        `  ✓ Auth "${health.soonestAuthExpiry.name}" valid for ${formatDuration(r)}`,
+        `  ✓ Auth "${health.soonestAuthExpiry.name}" valid for ${formatDelta(r)}`,
       );
     }
   }
@@ -541,13 +549,6 @@ function printCookieSummary(state, siteName) {
   } else {
     console.log(`  ✓ Status: HEALTHY`);
   }
-}
-
-function formatDuration(seconds) {
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
-  if (seconds < 86400) return `${Math.round(seconds / 3600)}h`;
-  return `${Math.round(seconds / 86400)}d`;
 }
 
 function printHelp() {
@@ -600,7 +601,7 @@ Profile & auth files: ~/.playwright-cli/
 }
 
 // ── Exports (for testing) ──────────────────────────────────────────
-export { profileDir, authFile, loadSites, validateName, formatDuration };
+export { profileDir, authFile, loadSites, validateName, formatDelta };
 
 // ── CLI entrypoint ─────────────────────────────────────────────────
 const __filename = fileURLToPath(import.meta.url);
