@@ -36,6 +36,18 @@ mkdir -p ~/.playwright-cli
 cp <found-path> ~/.playwright-cli/sign-in.mjs
 ```
 
+Also copy the cookie analysis module that sign-in.mjs depends on:
+
+```bash
+cp <found-path-directory>/cookie-analysis.mjs ~/.playwright-cli/cookie-analysis.mjs
+```
+
+Where `<found-path-directory>` is the same directory as `sign-in.mjs`. Use Glob to find it:
+
+```
+**/skills/auth-browse/scripts/cookie-analysis.mjs
+```
+
 ## Step 3: Install Playwright Dependency
 
 Check if `~/.playwright-cli/node_modules/playwright` exists.
@@ -79,6 +91,7 @@ node ~/.playwright-cli/sign-in.mjs check <site>
 ## Step 6: Summary
 
 Present what was set up:
+
 - Script location: `~/.playwright-cli/sign-in.mjs`
 - Profile location: `~/.playwright-cli/chrome-profile/`
 - Number of services authenticated
