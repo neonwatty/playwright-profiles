@@ -1,11 +1,14 @@
 {
   "name": "neonwatty-playwright-profiles",
   "owner": { "name": "Jeremy Watt", "github": "neonwatty" },
+  "metadata": {
+    "description": "Auth-only Claude Code plugin for Playwright profiles and persistent authenticated browsing."
+  },
   "plugins": [
     {
       "name": "playwright-profiles",
       "source": { "source": "github", "repo": "neonwatty/playwright-profiles" },
-      "description": "Manage Playwright authentication profiles — per-project role-based profiles and global persistent auth for external services with bot-detection bypass",
+      "description": "Auth-only Claude Code plugin for Playwright profiles, persistent external-service auth, custom app auth capture, and bot-detection-aware browsing. Use neonwatty/qa-skills for the full QA workflow plugin.",
       "version": "2.0.0",
       "category": "browser",
       "tags": [

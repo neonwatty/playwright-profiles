@@ -6,9 +6,8 @@ import {
   validateName,
 } from "../skills/auth-browse/scripts/sign-in.mjs";
 import { join } from "path";
-import { homedir } from "os";
 
-const BASE = join(homedir(), ".playwright-cli");
+const BASE = process.env.PLAYWRIGHT_CLI_HOME;
 
 describe("profileDir (UT-06)", () => {
   it("returns default profile for undefined", () => {
