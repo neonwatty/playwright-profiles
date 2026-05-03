@@ -1,5 +1,7 @@
 # playwright-profiles
 
+[![Discord](https://img.shields.io/badge/Discord-Join%20Server-7289da?style=flat&logo=discord&logoColor=white)](https://discord.gg/7xsxU4ZG6A)
+
 Manage Playwright authentication profiles for Claude Code — both per-project role-based profiles and global persistent auth for external services.
 
 > **Note:** This repo is now the auth-only distribution. The full QA workflow plugin, including these auth/profile capabilities plus workflow generators, Playwright converters, QA agents, and CI helpers, lives in [`neonwatty/qa-skills`](https://github.com/neonwatty/qa-skills).
