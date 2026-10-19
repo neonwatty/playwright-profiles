@@ -188,3 +188,7 @@ For sites with aggressive bot detection (Cloudflare), headed mode (`--headed`) i
 - Global auth files live in `~/.playwright-cli/` (user home, never committed)
 - Only role names, login URLs, and descriptions are committed (per-project)
 - The sign-in script uses your real Chrome — no proxy, no credential interception
+
+## More from Jeremy Watt
+
+[All projects](https://neonwatty.com/projects/) · [Blog](https://neonwatty.com/posts/)
